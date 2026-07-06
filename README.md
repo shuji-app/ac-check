@@ -1,4 +1,4 @@
-# エアコン点検アプリ — GitHub Pagesで公開してiPad/Edgeから使う方法
+# エアコン点検アプリ — GitHub Pagesで公開してiPad/Edgeから使う方法!
 
 ## 必要なファイル（この2つをアップロードすればOK）
 - `index.html`
