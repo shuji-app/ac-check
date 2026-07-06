@@ -1054,6 +1054,8 @@ function SessionView({
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = useState(sessionInfo?.date || today);
   const [inspector, setInspector] = useState(sessionInfo?.inspector || "");
+  const [inspector2, setInspector2] = useState(sessionInfo?.inspector2 || "");
+  const [showInspector2, setShowInspector2] = useState(!!sessionInfo?.inspector2);
   const [access, setAccess] = useState(sessionInfo?.roomAccess || {});
   const [memoOpen, setMemoOpen] = useState({});
   const [floorSortAsc, setFloorSortAsc] = useState(false); // デフォルト降順（10F→1F）
@@ -1177,6 +1179,16 @@ function SessionView({
     type: "date",
     value: date,
     onChange: e => setDate(e.target.value),
+    onClick: e => {
+      try {
+        e.target.showPicker && e.target.showPicker();
+      } catch (err) {}
+    },
+    onFocus: e => {
+      try {
+        e.target.showPicker && e.target.showPicker();
+      } catch (err) {}
+    },
     style: {
       width: "100%",
       fontSize: 14,
@@ -1186,7 +1198,8 @@ function SessionView({
       borderRadius: 8,
       outline: "none",
       color: C.g800,
-      background: C.g50
+      background: C.g50,
+      cursor: "pointer"
     }
   })), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1237,7 +1250,77 @@ function SessionView({
       outline: "none",
       background: C.g50
     }
-  })), allFloors.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }), showInspector2 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8,
+      display: "flex",
+      gap: 6,
+      alignItems: "center"
+    }
+  }, inspList.length > 0 ? /*#__PURE__*/React.createElement("select", {
+    value: inspector2,
+    onChange: e => setInspector2(e.target.value),
+    style: {
+      flex: 1,
+      fontSize: 14,
+      fontWeight: 700,
+      padding: "7px 10px",
+      border: "2px solid " + (inspector2 ? C.blue : C.g200),
+      borderRadius: 8,
+      outline: "none",
+      color: inspector2 ? C.g800 : C.g400,
+      background: C.g50,
+      appearance: "auto",
+      cursor: "pointer"
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— 二人目の点検者を選択 —"), inspList.filter(n => n !== inspector).map(name => /*#__PURE__*/React.createElement("option", {
+    key: name,
+    value: name
+  }, name))) : /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    value: inspector2,
+    onChange: e => setInspector2(e.target.value),
+    placeholder: "二人目の点検者名を入力",
+    style: {
+      flex: 1,
+      fontSize: 13,
+      padding: "7px 10px",
+      border: "2px solid " + (inspector2 ? C.blue : C.g200),
+      borderRadius: 8,
+      outline: "none",
+      background: C.g50
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setInspector2("");
+      setShowInspector2(false);
+    },
+    style: {
+      padding: "7px 10px",
+      borderRadius: 8,
+      border: "1.5px solid " + C.g200,
+      background: C.g50,
+      color: C.g500,
+      cursor: "pointer",
+      fontSize: 12,
+      fontWeight: 700
+    }
+  }, "✕")) : /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowInspector2(true),
+    style: {
+      marginTop: 8,
+      padding: "6px 12px",
+      borderRadius: 8,
+      border: "1.5px dashed " + C.g300,
+      background: "none",
+      color: C.blue,
+      cursor: "pointer",
+      fontSize: 12,
+      fontWeight: 700
+    }
+  }, "＋ 二人目の点検者を追加")), allFloors.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#FFF7ED",
       borderRadius: 14,
@@ -1699,9 +1782,10 @@ function SessionView({
   })))), /*#__PURE__*/React.createElement("button", {
     disabled: !canStart,
     onClick: () => {
+      const combinedInspector = inspector2 ? inspector + "・" + inspector2 : inspector;
       const info = {
         date,
-        inspector,
+        inspector: combinedInspector,
         targetFloors,
         roomAccess: access,
         selectedBuildings,
@@ -1860,13 +1944,20 @@ function Step1View({
   };
   // 点検日・点検者・建物・階・機器選択が揃ったら、Step2Viewと同じ1行バーに折りたたむ（修正ボタンで再展開）
   const [summaryExpanded, setSummaryExpanded] = useState(false);
+  // 機器選択の検索窓：この画面（機器未選択の検索・一覧状態）になったら自動的にフォーカスする（室内機・室外機とも）
+  const devSearchRef = useRef(null);
+  useEffect(() => {
+    if (!s1DevDone && devSearchRef.current) {
+      devSearchRef.current.focus();
+    }
+  }, [s1DevDone, inspectionMode]);
   // 点検前状態：一次保存/スキップを押すと折りたたむ（測定データ入力はブロックしない。機器を切り替えたら自動的に展開状態に戻る）
   const [preStateConfirmedFor, setPreStateConfirmedFor] = useState(null);
   const deviceKey = (form.managementNo || "") + "|" + (form.unitNo || "");
   const preStateOpen = preStateConfirmedFor !== deviceKey;
   // 機器リストのソート：点検前状態・データ入力の済/未でスライドボタン切替（ONのとき未入力を先頭に表示）
-  const [sortByPreState, setSortByPreState] = useState(false);
-  const [sortByDataInput, setSortByDataInput] = useState(false);
+  const [preStateSortDir, setPreStateSortDir] = useState(null); // null|"done"|"undone"
+  const [dataSortDir, setDataSortDir] = useState(null); // null|"done"|"undone"
   const devPreStateDone = d => records.some(r => r.managementNo === d.managementNo && r.unitNo === d.unitNo && (r.preOperation || r.preMode || r.preWind || r.preSetTemp));
   const devDataDone = d => records.some(r => r.managementNo === d.managementNo && r.unitNo === d.unitNo && (inspectionMode === "outdoor" ? Object.values(r.checks || {}).some(v => v !== "") : Object.values(r.values).some(v => v !== "")));
   // 機器選択時の共通処理：機器を選ぶとすぐ下にデータ入力（測定値・チェック）が表示されるため、最初の項目に自動フォーカスする
@@ -1920,7 +2011,7 @@ function Step1View({
     const floorsSorted = [...displayFloors].sort((a, b) => b.localeCompare(a, undefined, {
       numeric: true
     }));
-    return /*#__PURE__*/React.createElement("div", {
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       style: {
         background: C.white,
         borderRadius: 12,
@@ -1974,7 +2065,38 @@ function Step1View({
         fontWeight: 700,
         color: C.navy
       }
-    }, form.inspector || "—")), showBuildings.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, form.inspector || "—")), /*#__PURE__*/React.createElement("button", {
+      onMouseDown: e => e.preventDefault(),
+      onClick: () => setStep(0),
+      style: {
+        marginLeft: "auto",
+        padding: "5px 12px",
+        borderRadius: 7,
+        border: "1.5px solid " + C.g300,
+        background: C.g50,
+        color: C.g600,
+        cursor: "pointer",
+        fontSize: 12,
+        fontWeight: 700,
+        whiteSpace: "nowrap"
+      }
+    }, "修正"))), (showBuildings.length > 0 || allFloorsResolved.length > 0) && /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: C.white,
+        borderRadius: 12,
+        padding: "10px 12px",
+        boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+        marginTop: 6
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 16,
+        rowGap: 8,
+        flexWrap: "wrap",
+        alignItems: "center"
+      }
+    }, showBuildings.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         alignItems: "baseline",
@@ -2037,7 +2159,7 @@ function Step1View({
         fontWeight: 700,
         whiteSpace: "nowrap"
       }
-    }, "修正")));
+    }, "修正"))));
   })(), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -2168,6 +2290,7 @@ function Step1View({
     }
   }, /*#__PURE__*/React.createElement("input", {
     value: devSearch,
+    ref: devSearchRef,
     onChange: e => {
       setDevSearch(e.target.value);
     },
@@ -2279,65 +2402,53 @@ function Step1View({
   })()) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      gap: 8,
+      gap: 10,
       flexWrap: "wrap",
-      flexShrink: 0
+      flexShrink: 0,
+      alignItems: "center"
     }
   }, [{
-    label: "点検前状態順",
-    on: sortByPreState,
-    set: setSortByPreState
+    label: "点検前状態",
+    dir: preStateSortDir,
+    set: setPreStateSortDir
   }, {
-    label: "データ入力順",
-    on: sortByDataInput,
-    set: setSortByDataInput
+    label: "データ入力",
+    dir: dataSortDir,
+    set: setDataSortDir
   }].map(({
     label,
-    on,
+    dir,
     set
-  }) => /*#__PURE__*/React.createElement("button", {
+  }) => /*#__PURE__*/React.createElement("div", {
     key: label,
-    onMouseDown: e => e.preventDefault(),
-    onClick: () => set(p => !p),
     style: {
       display: "flex",
       alignItems: "center",
-      gap: 6,
-      padding: "4px 9px",
-      borderRadius: 20,
-      border: "1.5px solid " + (on ? C.blue : C.g200),
-      background: on ? C.blue + "10" : C.white,
-      cursor: "pointer"
+      gap: 4
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 11,
       fontWeight: 700,
-      color: on ? C.blue : C.g500,
+      color: C.g500,
       whiteSpace: "nowrap"
     }
-  }, label), /*#__PURE__*/React.createElement("div", {
+  }, label, "："), [["done", "入力済"], ["undone", "未入力"]].map(([v, txt]) => /*#__PURE__*/React.createElement("button", {
+    key: v,
+    onMouseDown: e => e.preventDefault(),
+    onClick: () => set(p => p === v ? null : v),
     style: {
-      width: 30,
-      height: 16,
-      borderRadius: 8,
-      background: on ? C.blue : C.g300,
-      position: "relative",
-      transition: "background 0.15s",
-      flexShrink: 0
+      padding: "4px 10px",
+      borderRadius: 16,
+      border: "1.5px solid " + (dir === v ? C.blue : C.g200),
+      background: dir === v ? C.blue : C.white,
+      color: dir === v ? C.white : C.g500,
+      cursor: "pointer",
+      fontSize: 11,
+      fontWeight: 700,
+      whiteSpace: "nowrap"
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "absolute",
-      top: 2,
-      left: on ? 16 : 2,
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-      background: C.white,
-      transition: "left 0.15s"
-    }
-  }))))), /*#__PURE__*/React.createElement("div", {
+  }, txt))))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -2353,15 +2464,17 @@ function Step1View({
     const floorOrder = targetFloors && targetFloors.length > 0 ? targetFloors // セッション画面の選択順（sortedFloorsと同じ降順）
     : null;
     const sorted = [...baseDevList].sort((a, b) => {
-      if (sortByDataInput) {
+      if (dataSortDir) {
         const da = devDataDone(a) ? 1 : 0,
           db = devDataDone(b) ? 1 : 0;
-        if (da !== db) return da - db; // 未入力（0）を先頭に
+        const cmp = dataSortDir === "undone" ? da - db : db - da;
+        if (da !== db) return cmp;
       }
-      if (sortByPreState) {
+      if (preStateSortDir) {
         const pa = devPreStateDone(a) ? 1 : 0,
           pb = devPreStateDone(b) ? 1 : 0;
-        if (pa !== pb) return pa - pb; // 未入力（0）を先頭に
+        const cmp = preStateSortDir === "undone" ? pa - pb : pb - pa;
+        if (pa !== pb) return cmp;
       }
       if (!floorOrder) return a.floor.localeCompare(b.floor) || a.room.localeCompare(b.room);
       const ai = floorOrder.indexOf(a.floor);
@@ -2677,12 +2790,12 @@ function Step1View({
     }
   }))))))) :
   /*#__PURE__*/
-  /* ── 折りたたみ済み：1行目=点検日・点検者・建物・階／2行目=機器選択（部屋名・管理番号・機器番号）。それぞれに修正ボタン ── */
+  /* ── 折りたたみ済み：1行目=点検日・点検者／2行目=建物・階／3行目=機器選択（部屋名・管理番号・機器番号）。それぞれに修正ボタン ── */
   React.createElement(React.Fragment, null, (() => {
     const bKey = devColumns.find(k => /建物|building|棟|ビル/i.test(k));
     const sessionBuildings = sessionInfo?.selectedBuildings || [];
     const showBuildings = bKey ? sessionBuildings.length > 0 ? sessionBuildings : [...new Set(devList.map(d => d._raw?.[bKey]).filter(Boolean))] : [];
-    return /*#__PURE__*/React.createElement("div", {
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       style: {
         background: C.white,
         borderRadius: 12,
@@ -2717,7 +2830,38 @@ function Step1View({
         fontWeight: 700,
         color: C.navy
       }
-    }, v || "—"))), showBuildings.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, v || "—"))), /*#__PURE__*/React.createElement("button", {
+      onMouseDown: e => e.preventDefault(),
+      onClick: () => setStep(0),
+      style: {
+        marginLeft: "auto",
+        padding: "5px 12px",
+        borderRadius: 7,
+        border: "1.5px solid " + C.g300,
+        background: C.g50,
+        color: C.g600,
+        cursor: "pointer",
+        fontSize: 12,
+        fontWeight: 700,
+        whiteSpace: "nowrap"
+      }
+    }, "修正"))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: C.white,
+        borderRadius: 12,
+        padding: "10px 12px",
+        boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+        marginTop: 6
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 16,
+        rowGap: 8,
+        flexWrap: "wrap",
+        alignItems: "center"
+      }
+    }, showBuildings.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         alignItems: "baseline",
@@ -2770,7 +2914,7 @@ function Step1View({
         fontWeight: 700,
         whiteSpace: "nowrap"
       }
-    }, "修正")));
+    }, "修正"))));
   })(), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.white,
@@ -4282,6 +4426,10 @@ function ACInspectionApp() {
   };
   const [showExportConfirm, setShowExportConfirm] = useState(null); // 絞り込み中のCSV出力確認ポップアップ（null=非表示、配列=絞り込み内容一覧）
   const handleCSVExportClick = () => {
+    if (filteredRows.length === 0) {
+      showFlash("⚠️ データがありません");
+      return;
+    }
     const active = activeFilterDescriptions();
     if (active.length > 0) {
       setShowExportConfirm(active);
@@ -4573,12 +4721,11 @@ function ACInspectionApp() {
     }
   }, "📋 データ一覧"), /*#__PURE__*/React.createElement("button", {
     onClick: handleCSVExportClick,
-    disabled: filteredRows.length === 0,
     style: {
       padding: "7px 14px",
       borderRadius: 8,
       border: "none",
-      cursor: filteredRows.length > 0 ? "pointer" : "not-allowed",
+      cursor: "pointer",
       fontSize: 12,
       fontWeight: 700,
       background: filteredRows.length > 0 ? C.teal : C.g200,
@@ -5045,7 +5192,11 @@ function ACInspectionApp() {
         borderBottom: "1px solid " + C.g100,
         background: bg,
         fontSize: 11,
-        color: v ? C.g800 : C.g300
+        color: v ? C.g800 : C.g300,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        maxWidth: 90
       }
     }, v || "—")), vf.map((f, fi) => {
       const val = rowFieldVal(row, f.code);
@@ -5069,21 +5220,24 @@ function ACInspectionApp() {
         textAlign: "center",
         borderBottom: "1px solid " + C.g100,
         background: bg,
-        borderLeft: "2px solid " + C.g200
+        borderLeft: "2px solid " + C.g200,
+        maxWidth: 180
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
-        flexWrap: "wrap",
+        flexWrap: "nowrap",
         gap: 2,
-        justifyContent: "center",
-        maxWidth: 160
+        justifyContent: "flex-start",
+        overflowX: "auto",
+        maxWidth: 170
       }
     }, rowChecksList(row).map(c => /*#__PURE__*/React.createElement("span", {
       key: c.code,
       title: c.label,
       style: {
         display: "inline-flex",
+        flexShrink: 0,
         alignItems: "center",
         justifyContent: "center",
         width: 16,
@@ -5102,7 +5256,11 @@ function ACInspectionApp() {
         background: bg,
         fontSize: 11,
         borderLeft: "2px solid " + C.g200,
-        color: rowRemarks(row) ? C.g800 : C.g300
+        color: rowRemarks(row) ? C.g800 : C.g300,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        maxWidth: 150
       }
     }, rowRemarks(row) || "—"));
   }))))), view === "settings" && /*#__PURE__*/React.createElement("div", {
