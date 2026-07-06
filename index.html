@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>エアコン点検</title>
+<style>
+  html, body { margin:0; padding:0; height:100%; overscroll-behavior:none; background:#fff; }
+  #root { width:100%; height:100%; }
+  #loading {
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:12px; font-family:sans-serif; color:#334155; background:#fff;
+  }
+  #loading.hide { display:none; }
+  #err { color:#b91c1c; font-size:13px; max-width:90%; white-space:pre-wrap; display:none; }
+</style>
+</head>
+<body>
+<div id="loading">
+  <div>読み込み中…</div>
+  <div id="err"></div>
+</div>
+<div id="root"></div>
+
+<!-- React / ReactDOM 本番ビルド（バージョン固定） -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+
+<script>
+  // 一定時間たっても読み込みが終わらない場合、原因の切り分け用にメッセージを出す
+  var loadTimeout = setTimeout(function () {
+    document.getElementById("err").style.display = "block";
+    document.getElementById("err").textContent =
+      "読み込みに時間がかかっています。ネットワーク接続、または下記URLがブロックされていないかご確認ください：\n" +
+      "https://cdnjs.cloudflare.com/ajax/libs/react/ ...\n" +
+      "ブラウザの「開発者ツール」→「コンソール」にエラーが出ていないかも確認してください。";
+  }, 8000);
+  window.addEventListener("error", function (e) {
+    var el = document.getElementById("err");
+    el.style.display = "block";
+    el.textContent = "エラーが発生しました：\n" + (e.message || e);
+  });
+</script>
+
+<!-- アプリ本体（事前にプレーンJSへ変換済み。ブラウザ側でBabelは使いません） -->
+<script src="app.compiled.js"></script>
+
+<script>
+  clearTimeout(loadTimeout);
+  var l = document.getElementById("loading");
+  if (l) l.className = "hide";
+</script>
+</body>
+</html>
