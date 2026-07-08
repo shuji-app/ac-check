@@ -1,4 +1,4 @@
-// ブラウザ上でBabel Standaloneを使って実行するため、ES importではなくグローバルReactから取り出す
+// ブラウザ上でBabel事前コンパイル済みJSを実行するため、ES importではなくグローバルReactから取り出す
 const {
   useState,
   useRef,
@@ -136,6 +136,7 @@ const emptyVal = () => {
   return v;
 };
 const emptyForm = (inspector = "", date = "") => ({
+  id: null,
   floor: "",
   room: "",
   managementNo: "",
@@ -252,6 +253,38 @@ const LS_KEYS = {
   limits: "acLimits",
   vis: "acVis"
 };
+
+// ─── Firebase（複数端末間のリアルタイム共有）───
+// 使い方：Firebaseコンソール（console.firebase.google.com）でプロジェクトを作成し、
+// Realtime Databaseを有効化した上で、下記の値を自分のプロジェクトのものに置き換える。
+// CDN読み込みに失敗した場合（オフライン等）はdb=nullとなり、以降の同期処理は
+// すべて安全にスキップされ、アプリ自体はローカルのみで動作し続ける。
+const firebaseConfig = {
+  apiKey: "AIzaSyDu_e2tLEVu1aO2STneS6tNVNl9Wr3jjXs",
+  authDomain: "ac-check-app.firebaseapp.com",
+  databaseURL: "https://ac-check-app-default-rtdb.firebaseio.com",
+  projectId: "ac-check-app",
+  storageBucket: "ac-check-app.firebasestorage.app",
+  messagingSenderId: "1089584979639",
+  appId: "1:1089584979639:web:9ecd774294b912d6fbb732"
+};
+const fbApp = typeof window !== "undefined" && window.firebase && firebaseConfig.apiKey !== "YOUR_API_KEY" ? window.firebase.initializeApp(firebaseConfig) : null;
+const db = fbApp ? window.firebase.database() : null;
+function saveRecordRemote(mode, rec) {
+  if (!db || !rec.id) return;
+  const {
+    id,
+    ...rest
+  } = rec;
+  db.ref("inspectionRecords/" + mode + "/" + id).set({
+    ...rest,
+    updatedAt: window.firebase.database.ServerValue.TIMESTAMP
+  });
+}
+function deleteRecordRemote(mode, id) {
+  if (!db || !id) return;
+  db.ref("inspectionRecords/" + mode + "/" + id).remove();
+}
 const C = {
   navy: "#1B3A6B",
   blue: "#2563B0",
@@ -327,7 +360,7 @@ const FieldRow = memo(function FR({
       borderRadius: 3,
       fontWeight: 700
     }
-  }, "⚠️")), /*#__PURE__*/React.createElement("td", {
+  }, "\u26A0\uFE0F")), /*#__PURE__*/React.createElement("td", {
     style: {
       padding: active ? "18px 6px" : "9px 6px",
       fontSize: active ? 14 : 11,
@@ -363,7 +396,7 @@ const FieldRow = memo(function FR({
       color: C.blue + "80",
       fontSize: 18
     }
-  }, "—") : "—")));
+  }, "\u2014") : "—")));
 });
 function Numpad({
   mode = "numeric",
@@ -464,7 +497,7 @@ function Numpad({
       color: C.g400,
       letterSpacing: "0.04em"
     }
-  }, "入力値"), /*#__PURE__*/React.createElement("div", {
+  }, "\u5165\u529B\u5024"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: "monospace",
       fontSize: 32,
@@ -477,7 +510,7 @@ function Numpad({
     style: {
       color: C.g200
     }
-  }, "—")))), KEYS.map((row, ri) => /*#__PURE__*/React.createElement("div", {
+  }, "\u2014")))), KEYS.map((row, ri) => /*#__PURE__*/React.createElement("div", {
     key: ri,
     style: {
       display: "flex",
@@ -528,14 +561,14 @@ function Numpad({
       ...nb(canPrev),
       flex: 1
     }
-  }, "▲"), /*#__PURE__*/React.createElement("button", {
+  }, "\u25B2"), /*#__PURE__*/React.createElement("button", {
     onClick: onNext,
     disabled: !canNext,
     style: {
       ...nb(canNext),
       flex: 1
     }
-  }, "▼")), onSave && /*#__PURE__*/React.createElement("button", {
+  }, "\u25BC")), onSave && /*#__PURE__*/React.createElement("button", {
     onClick: onSave,
     disabled: !saveComplete,
     style: {
@@ -695,7 +728,7 @@ function Step2View({
       fontSize: 12,
       fontWeight: 700
     }
-  }, "← 修正"))), /*#__PURE__*/React.createElement("div", {
+  }, "\u2190 \u4FEE\u6B63"))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       display: "flex",
@@ -719,7 +752,7 @@ function Step2View({
       background: C.teal + "10",
       borderRadius: 8
     }
-  }, "🏭 室外機点検チェック（", form.floor, " ", form.room, " ", form.managementNo, "）"), (() => {
+  }, "\uD83C\uDFED \u5BA4\u5916\u6A5F\u70B9\u691C\u30C1\u30A7\u30C3\u30AF\uFF08", form.floor, " ", form.room, " ", form.managementNo, "\uFF09"), (() => {
     const cats = [...new Set(outChkFields.map(f => f.category))];
     return cats.map(cat => /*#__PURE__*/React.createElement("div", {
       key: cat,
@@ -826,7 +859,7 @@ function Step2View({
       color: C.blue,
       borderBottom: "1px solid " + C.blue + "20"
     }
-  }, "室内機（インドア）")), visIn.map((f, i) => {
+  }, "\u5BA4\u5185\u6A5F\uFF08\u30A4\u30F3\u30C9\u30A2\uFF09")), visIn.map((f, i) => {
     const act = activeCode === f.code;
     const v = act ? numDisp : form.values[f.code];
     return /*#__PURE__*/React.createElement(FieldRow, {
@@ -853,7 +886,7 @@ function Step2View({
       color: C.teal,
       borderBottom: "1px solid " + C.teal + "20"
     }
-  }, "室外機（アウトドア）")), visOut.map((f, i) => {
+  }, "\u5BA4\u5916\u6A5F\uFF08\u30A2\u30A6\u30C8\u30C9\u30A2\uFF09")), visOut.map((f, i) => {
     const act = activeCode === f.code;
     const v = act ? numDisp : form.values[f.code];
     return /*#__PURE__*/React.createElement(FieldRow, {
@@ -883,7 +916,7 @@ function Step2View({
       color: "#059669",
       marginBottom: 8
     }
-  }, "✅ 室内機チェック項目"), /*#__PURE__*/React.createElement("table", {
+  }, "\u2705 \u5BA4\u5185\u6A5F\u30C1\u30A7\u30C3\u30AF\u9805\u76EE"), /*#__PURE__*/React.createElement("table", {
     style: {
       width: "100%",
       borderCollapse: "collapse"
@@ -898,7 +931,7 @@ function Step2View({
       color: C.g500,
       borderBottom: "2px solid " + C.g200
     }
-  }, "項目"), /*#__PURE__*/React.createElement("th", {
+  }, "\u9805\u76EE"), /*#__PURE__*/React.createElement("th", {
     style: {
       padding: "6px 8px",
       textAlign: "left",
@@ -907,7 +940,7 @@ function Step2View({
       color: C.g500,
       borderBottom: "2px solid " + C.g200
     }
-  }, "点検内容"), /*#__PURE__*/React.createElement("th", {
+  }, "\u70B9\u691C\u5185\u5BB9"), /*#__PURE__*/React.createElement("th", {
     style: {
       width: 110,
       padding: "6px 8px",
@@ -917,7 +950,7 @@ function Step2View({
       color: C.g500,
       borderBottom: "2px solid " + C.g200
     }
-  }, "○×"))), /*#__PURE__*/React.createElement("tbody", null, ciFields.map((f, i) => {
+  }, "\u25CB\xD7"))), /*#__PURE__*/React.createElement("tbody", null, ciFields.map((f, i) => {
     const val = form.checks?.[f.code] || "";
     const act = activeCode === f.code;
     return /*#__PURE__*/React.createElement("tr", {
@@ -1015,10 +1048,10 @@ function Step2View({
       fontWeight: 700,
       color: C.g500
     }
-  }, "📝 備考・特記事項"), /*#__PURE__*/React.createElement("textarea", {
+  }, "\uD83D\uDCDD \u5099\u8003\u30FB\u7279\u8A18\u4E8B\u9805"), /*#__PURE__*/React.createElement("textarea", {
     value: form.remarks,
     onChange: e => setInfo("remarks", e.target.value),
-    placeholder: "異常箇所、特記事項など...",
+    placeholder: "\u7570\u5E38\u7B87\u6240\u3001\u7279\u8A18\u4E8B\u9805\u306A\u3069...",
     style: {
       flex: 1,
       width: "100%",
@@ -1156,12 +1189,12 @@ function SessionView({
       fontWeight: 800,
       marginBottom: 2
     }
-  }, "🚪 点検エリア確認"), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDEAA \u70B9\u691C\u30A8\u30EA\u30A2\u78BA\u8A8D"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: "rgba(255,255,255,0.75)"
     }
-  }, "点検日・点検者・対象階・点検エリアを設定してから点検を開始してください")), /*#__PURE__*/React.createElement("div", {
+  }, "\u70B9\u691C\u65E5\u30FB\u70B9\u691C\u8005\u30FB\u5BFE\u8C61\u968E\u30FB\u70B9\u691C\u30A8\u30EA\u30A2\u3092\u8A2D\u5B9A\u3057\u3066\u304B\u3089\u70B9\u691C\u3092\u958B\u59CB\u3057\u3066\u304F\u3060\u3055\u3044")), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.white,
       borderRadius: 14,
@@ -1175,18 +1208,14 @@ function SessionView({
       color: C.navy,
       marginBottom: 6
     }
-  }, "📅 点検日"), /*#__PURE__*/React.createElement("input", {
+  }, "\uD83D\uDCC5 \u70B9\u691C\u65E5"), /*#__PURE__*/React.createElement("input", {
     type: "date",
     value: date,
     onChange: e => setDate(e.target.value),
     onClick: e => {
+      const el = e.target;
       try {
-        e.target.showPicker && e.target.showPicker();
-      } catch (err) {}
-    },
-    onFocus: e => {
-      try {
-        e.target.showPicker && e.target.showPicker();
+        el.showPicker && el.showPicker();
       } catch (err) {}
     },
     style: {
@@ -1215,7 +1244,7 @@ function SessionView({
       color: C.navy,
       marginBottom: 6
     }
-  }, "👤 点検者"), inspList.length > 0 ? /*#__PURE__*/React.createElement("select", {
+  }, "\uD83D\uDC64 \u70B9\u691C\u8005"), inspList.length > 0 ? /*#__PURE__*/React.createElement("select", {
     value: inspector,
     onChange: e => setInspector(e.target.value),
     style: {
@@ -1233,14 +1262,14 @@ function SessionView({
     }
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "— 点検者を選択 —"), inspList.map(name => /*#__PURE__*/React.createElement("option", {
+  }, "\u2014 \u70B9\u691C\u8005\u3092\u9078\u629E \u2014"), inspList.map(name => /*#__PURE__*/React.createElement("option", {
     key: name,
     value: name
   }, name))) : /*#__PURE__*/React.createElement("input", {
     type: "text",
     value: inspector,
     onChange: e => setInspector(e.target.value),
-    placeholder: "点検者名を入力",
+    placeholder: "\u70B9\u691C\u8005\u540D\u3092\u5165\u529B",
     style: {
       width: "100%",
       fontSize: 13,
@@ -1275,14 +1304,14 @@ function SessionView({
     }
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "— 二人目の点検者を選択 —"), inspList.filter(n => n !== inspector).map(name => /*#__PURE__*/React.createElement("option", {
+  }, "\u2014 \u4E8C\u4EBA\u76EE\u306E\u70B9\u691C\u8005\u3092\u9078\u629E \u2014"), inspList.filter(n => n !== inspector).map(name => /*#__PURE__*/React.createElement("option", {
     key: name,
     value: name
   }, name))) : /*#__PURE__*/React.createElement("input", {
     type: "text",
     value: inspector2,
     onChange: e => setInspector2(e.target.value),
-    placeholder: "二人目の点検者名を入力",
+    placeholder: "\u4E8C\u4EBA\u76EE\u306E\u70B9\u691C\u8005\u540D\u3092\u5165\u529B",
     style: {
       flex: 1,
       fontSize: 13,
@@ -1307,7 +1336,7 @@ function SessionView({
       fontSize: 12,
       fontWeight: 700
     }
-  }, "✕")) : /*#__PURE__*/React.createElement("button", {
+  }, "\u2715")) : /*#__PURE__*/React.createElement("button", {
     onClick: () => setShowInspector2(true),
     style: {
       marginTop: 8,
@@ -1320,7 +1349,7 @@ function SessionView({
       fontSize: 12,
       fontWeight: 700
     }
-  }, "＋ 二人目の点検者を追加")), allFloors.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, "\uFF0B \u4E8C\u4EBA\u76EE\u306E\u70B9\u691C\u8005\u3092\u8FFD\u52A0")), allFloors.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#FFF7ED",
       borderRadius: 14,
@@ -1335,12 +1364,12 @@ function SessionView({
       color: "#92400E",
       marginBottom: 4
     }
-  }, "🏢 本日の対象エリア"), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83C\uDFE2 \u672C\u65E5\u306E\u5BFE\u8C61\u30A8\u30EA\u30A2"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: "#92400E"
     }
-  }, "⚠️ 機器リストCSVが読み込まれていません。", /*#__PURE__*/React.createElement("br", null), "設定画面から機器リストCSVを読み込むと、エリアの選択・点検エリア確認が利用できます。")) : /*#__PURE__*/React.createElement("div", {
+  }, "\u26A0\uFE0F \u6A5F\u5668\u30EA\u30B9\u30C8CSV\u304C\u8AAD\u307F\u8FBC\u307E\u308C\u3066\u3044\u307E\u305B\u3093\u3002", /*#__PURE__*/React.createElement("br", null), "\u8A2D\u5B9A\u753B\u9762\u304B\u3089\u6A5F\u5668\u30EA\u30B9\u30C8CSV\u3092\u8AAD\u307F\u8FBC\u3080\u3068\u3001\u30A8\u30EA\u30A2\u306E\u9078\u629E\u30FB\u70B9\u691C\u30A8\u30EA\u30A2\u78BA\u8A8D\u304C\u5229\u7528\u3067\u304D\u307E\u3059\u3002")) : /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.white,
       borderRadius: 14,
@@ -1361,7 +1390,7 @@ function SessionView({
       color: C.navy,
       flex: 1
     }
-  }, "🏢 本日の対象エリア")), allBuildings.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "\uD83C\uDFE2 \u672C\u65E5\u306E\u5BFE\u8C61\u30A8\u30EA\u30A2")), allBuildings.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 8
     }
@@ -1372,7 +1401,7 @@ function SessionView({
       color: C.g500,
       marginBottom: 5
     }
-  }, "🏗️ 建物"), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83C\uDFD7\uFE0F \u5EFA\u7269"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexWrap: "wrap",
@@ -1427,7 +1456,7 @@ function SessionView({
         minWidth: 62,
         textAlign: "center"
       }
-    }, "すべて", allSel ? " ✓" : "");
+    }, "\u3059\u3079\u3066", allSel ? " ✓" : "");
   })(), sortedFloors.map(fl => {
     const sel = targetFloors.includes(fl);
     return /*#__PURE__*/React.createElement("button", {
@@ -1454,7 +1483,7 @@ function SessionView({
       color: C.red,
       fontWeight: 700
     }
-  }, "⚠️ 対象エリアを1つ以上選択してください"), targetFloors.length > 0 && indoorDevList.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "\u26A0\uFE0F \u5BFE\u8C61\u30A8\u30EA\u30A2\u30921\u3064\u4EE5\u4E0A\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044"), targetFloors.length > 0 && indoorDevList.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       display: "flex",
@@ -1475,7 +1504,7 @@ function SessionView({
       cursor: "pointer",
       transition: "all 0.15s"
     }
-  }, "📋 全機器"), /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDCCB \u5168\u6A5F\u5668"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setUndoneOnly(true),
     style: {
       flex: 1,
@@ -1489,7 +1518,7 @@ function SessionView({
       cursor: "pointer",
       transition: "all 0.15s"
     }
-  }, "⏳ 未入力分 ", undoneCount > 0 ? "(" + undoneCount + ")" : "(なし)")), allFloors.length > 1 && /*#__PURE__*/React.createElement("div", {
+  }, "\u23F3 \u672A\u5165\u529B\u5206 ", undoneCount > 0 ? "(" + undoneCount + ")" : "(なし)")), allFloors.length > 1 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       display: "flex",
@@ -1507,7 +1536,7 @@ function SessionView({
       fontWeight: 700,
       cursor: "pointer"
     }
-  }, "表示順 ", floorSortAsc ? "▲ 昇順" : "▼ 降順"))), targetRooms.length > 0 && showAccessCheck && /*#__PURE__*/React.createElement("div", {
+  }, "\u8868\u793A\u9806 ", floorSortAsc ? "▲ 昇順" : "▼ 降順"))), targetRooms.length > 0 && showAccessCheck && /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.white,
       borderRadius: 14,
@@ -1528,7 +1557,7 @@ function SessionView({
       color: C.navy,
       flex: 1
     }
-  }, "🚪 入室可否チェック"), /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDEAA \u5165\u5BA4\u53EF\u5426\u30C1\u30A7\u30C3\u30AF"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setSkipAccessCheck(p => !p),
     style: {
       padding: "5px 10px",
@@ -1541,7 +1570,7 @@ function SessionView({
       cursor: "pointer",
       whiteSpace: "nowrap"
     }
-  }, "⏭️ スキップ", skipAccessCheck ? " ✓" : "")), skipAccessCheck ? /*#__PURE__*/React.createElement("div", {
+  }, "\u23ED\uFE0F \u30B9\u30AD\u30C3\u30D7", skipAccessCheck ? " ✓" : "")), skipAccessCheck ? /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "8px 10px",
       background: C.teal + "10",
@@ -1551,7 +1580,7 @@ function SessionView({
       color: C.teal,
       fontWeight: 700
     }
-  }, "⏭️ 入室可否チェックをスキップしました（部屋一覧は表示されません）") : /*#__PURE__*/React.createElement(React.Fragment, null, ngCount > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "\u23ED\uFE0F \u5165\u5BA4\u53EF\u5426\u30C1\u30A7\u30C3\u30AF\u3092\u30B9\u30AD\u30C3\u30D7\u3057\u307E\u3057\u305F\uFF08\u90E8\u5C4B\u4E00\u89A7\u306F\u8868\u793A\u3055\u308C\u307E\u305B\u3093\uFF09") : /*#__PURE__*/React.createElement(React.Fragment, null, ngCount > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 6,
       padding: "5px 10px",
@@ -1562,7 +1591,7 @@ function SessionView({
       fontWeight: 700,
       color: C.red
     }
-  }, "⚠️ NG ", ngCount, "部屋 — 点検フォームでグレーアウトされます"), /*#__PURE__*/React.createElement("div", {
+  }, "\u26A0\uFE0F NG ", ngCount, "\u90E8\u5C4B \u2014 \u70B9\u691C\u30D5\u30A9\u30FC\u30E0\u3067\u30B0\u30EC\u30FC\u30A2\u30A6\u30C8\u3055\u308C\u307E\u3059"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -1674,7 +1703,7 @@ function SessionView({
           whiteSpace: "nowrap",
           flexShrink: 0
         }
-      }, "🚫 ", [["today", "本日のみNG"], ["am", "午前のみNG"], ["pm", "午後のみNG"], ["discharge", "退院までNG"]].find(([v]) => v === ngType)?.[1] || "本日のみNG", memo && "　" + memo)), /*#__PURE__*/React.createElement("div", {
+      }, "\uD83D\uDEAB ", [["today", "本日のみNG"], ["am", "午前のみNG"], ["pm", "午後のみNG"], ["discharge", "退院までNG"]].find(([v]) => v === ngType)?.[1] || "本日のみNG", memo && "　" + memo)), /*#__PURE__*/React.createElement("div", {
         style: {
           display: "flex",
           gap: 3
@@ -1745,7 +1774,7 @@ function SessionView({
         onChange: e => setAcc(k, {
           memo: e.target.value
         }),
-        placeholder: "備考（入室不可理由など）",
+        placeholder: "\u5099\u8003\uFF08\u5165\u5BA4\u4E0D\u53EF\u7406\u7531\u306A\u3069\uFF09",
         inputMode: "text",
         style: {
           width: "100%",
@@ -1777,7 +1806,7 @@ function SessionView({
           fontWeight: 700,
           cursor: "pointer"
         }
-      }, "閉じる")));
+      }, "\u9589\u3058\u308B")));
     })));
   })))), /*#__PURE__*/React.createElement("button", {
     disabled: !canStart,
@@ -2039,7 +2068,7 @@ function Step1View({
         color: C.green,
         whiteSpace: "nowrap"
       }
-    }, "✓ 点検日"), /*#__PURE__*/React.createElement("span", {
+    }, "\u2713 \u70B9\u691C\u65E5"), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 14,
         fontWeight: 700,
@@ -2059,7 +2088,7 @@ function Step1View({
         color: C.green,
         whiteSpace: "nowrap"
       }
-    }, "✓ 点検者"), /*#__PURE__*/React.createElement("span", {
+    }, "\u2713 \u70B9\u691C\u8005"), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 14,
         fontWeight: 700,
@@ -2080,7 +2109,7 @@ function Step1View({
         fontWeight: 700,
         whiteSpace: "nowrap"
       }
-    }, "修正"))), (showBuildings.length > 0 || allFloorsResolved.length > 0) && /*#__PURE__*/React.createElement("div", {
+    }, "\u4FEE\u6B63"))), (showBuildings.length > 0 || allFloorsResolved.length > 0) && /*#__PURE__*/React.createElement("div", {
       style: {
         background: C.white,
         borderRadius: 12,
@@ -2110,7 +2139,7 @@ function Step1View({
         color: C.green,
         whiteSpace: "nowrap"
       }
-    }, "✓ 建物"), showBuildings.map(b => /*#__PURE__*/React.createElement("span", {
+    }, "\u2713 \u5EFA\u7269"), showBuildings.map(b => /*#__PURE__*/React.createElement("span", {
       key: b,
       style: {
         fontSize: 13,
@@ -2134,7 +2163,7 @@ function Step1View({
         color: C.green,
         whiteSpace: "nowrap"
       }
-    }, "✓ 階"), floorsSorted.map(fl => /*#__PURE__*/React.createElement("span", {
+    }, "\u2713 \u968E"), floorsSorted.map(fl => /*#__PURE__*/React.createElement("span", {
       key: fl,
       style: {
         fontSize: 13,
@@ -2159,7 +2188,7 @@ function Step1View({
         fontWeight: 700,
         whiteSpace: "nowrap"
       }
-    }, "修正"))));
+    }, "\u4FEE\u6B63"))));
   })(), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -2194,13 +2223,13 @@ function Step1View({
       fontWeight: 700,
       color: C.white
     }
-  }, "✓"), /*#__PURE__*/React.createElement("span", {
+  }, "\u2713"), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
       fontWeight: 700,
       color: C.green
     }
-  }, "機器種別"))), /*#__PURE__*/React.createElement("div", {
+  }, "\u6A5F\u5668\u7A2E\u5225"))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       background: C.white,
@@ -2267,7 +2296,7 @@ function Step1View({
       fontWeight: 700,
       color: s1DevDone ? C.green : C.g600
     }
-  }, "機器選択"))), /*#__PURE__*/React.createElement("div", {
+  }, "\u6A5F\u5668\u9078\u629E"))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       background: C.white,
@@ -2295,7 +2324,7 @@ function Step1View({
       setDevSearch(e.target.value);
     },
     onFocus: () => setS1Focus("devSearch"),
-    placeholder: "管理番号・部屋名で検索…",
+    placeholder: "\u7BA1\u7406\u756A\u53F7\u30FB\u90E8\u5C4B\u540D\u3067\u691C\u7D22\u2026",
     style: {
       width: "100%",
       padding: "7px 10px 7px 28px",
@@ -2317,7 +2346,7 @@ function Step1View({
       color: C.blue,
       pointerEvents: "none"
     }
-  }, "🔍"), devSearch && /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDD0D"), devSearch && /*#__PURE__*/React.createElement("button", {
     onMouseDown: e => e.preventDefault(),
     onClick: () => setDevSearch(""),
     style: {
@@ -2332,7 +2361,7 @@ function Step1View({
       color: C.g400,
       lineHeight: 1
     }
-  }, "✕")), s1DevDone && /*#__PURE__*/React.createElement("button", {
+  }, "\u2715")), s1DevDone && /*#__PURE__*/React.createElement("button", {
     onMouseDown: e => e.preventDefault(),
     onClick: () => {
       setForm(p => ({
@@ -2355,7 +2384,7 @@ function Step1View({
       fontWeight: 700,
       whiteSpace: "nowrap"
     }
-  }, "変更")), s1DevDone && !devSearch ? /*#__PURE__*/React.createElement("div", {
+  }, "\u5909\u66F4")), s1DevDone && !devSearch ? /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "8px 12px",
       borderRadius: 9,
@@ -2381,7 +2410,7 @@ function Step1View({
       color: C.green,
       whiteSpace: "nowrap"
     }
-  }, "✓ ", k), /*#__PURE__*/React.createElement("span", {
+  }, "\u2713 ", k), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 13,
       fontWeight: 700,
@@ -2398,7 +2427,7 @@ function Step1View({
         whiteSpace: "pre-wrap",
         wordBreak: "break-word"
       }
-    }, "📝 ", remarksVal) : null;
+    }, "\uD83D\uDCDD ", remarksVal) : null;
   })()) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -2433,7 +2462,7 @@ function Step1View({
       color: C.g500,
       whiteSpace: "nowrap"
     }
-  }, label, "："), [["done", "入力済"], ["undone", "未入力"]].map(([v, txt]) => /*#__PURE__*/React.createElement("button", {
+  }, label, "\uFF1A"), [["done", "入力済"], ["undone", "未入力"]].map(([v, txt]) => /*#__PURE__*/React.createElement("button", {
     key: v,
     onMouseDown: e => e.preventDefault(),
     onClick: () => set(p => p === v ? null : v),
@@ -2511,7 +2540,7 @@ function Step1View({
         color: C.g400,
         padding: "6px 4px"
       }
-    }, "該当する機器がありません");
+    }, "\u8A72\u5F53\u3059\u308B\u6A5F\u5668\u304C\u3042\u308A\u307E\u305B\u3093");
     return filtered.map((dev, i) => {
       const sel = form.managementNo === dev.managementNo && form.unitNo === dev.unitNo;
       const hasMeas = records.some(r => r.managementNo === dev.managementNo && r.unitNo === dev.unitNo && (inspectionMode === "outdoor" ? Object.values(r.checks || {}).some(v => v !== "") : Object.values(r.values).some(v => v !== "")));
@@ -2566,7 +2595,7 @@ function Step1View({
             }
           }, ngReason), remarksVal && /*#__PURE__*/React.createElement("span", {
             style: remarksStyle
-          }, "📝 ", remarksVal));
+          }, "\uD83D\uDCDD ", remarksVal));
         }
         return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
           style: {
@@ -2595,7 +2624,7 @@ function Step1View({
           }
         }, ngReason), remarksVal && /*#__PURE__*/React.createElement("span", {
           style: remarksStyle
-        }, "📝 ", remarksVal));
+        }, "\uD83D\uDCDD ", remarksVal));
       })());
       if (hasMeas && !sel) return /*#__PURE__*/React.createElement("button", {
         key: i,
@@ -2649,9 +2678,9 @@ function Step1View({
               borderRadius: 4,
               whiteSpace: "nowrap"
             }
-          }, "入力済"), showExtraRemarks && /*#__PURE__*/React.createElement("span", {
+          }, "\u5165\u529B\u6E08"), showExtraRemarks && /*#__PURE__*/React.createElement("span", {
             style: remarksStyle
-          }, "📝 ", remarksVal));
+          }, "\uD83D\uDCDD ", remarksVal));
         }
         return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
           style: {
@@ -2675,9 +2704,9 @@ function Step1View({
             borderRadius: 4,
             whiteSpace: "nowrap"
           }
-        }, "入力済"), showExtraRemarks && /*#__PURE__*/React.createElement("span", {
+        }, "\u5165\u529B\u6E08"), showExtraRemarks && /*#__PURE__*/React.createElement("span", {
           style: remarksStyle
-        }, "📝 ", remarksVal));
+        }, "\uD83D\uDCDD ", remarksVal));
       })());
       return /*#__PURE__*/React.createElement("button", {
         key: i,
@@ -2723,7 +2752,7 @@ function Step1View({
             }, val) : null;
           }), showExtraRemarks && /*#__PURE__*/React.createElement("span", {
             style: remarksStyle
-          }, "📝 ", remarksVal));
+          }, "\uD83D\uDCDD ", remarksVal));
         }
         return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
           style: {
@@ -2739,7 +2768,7 @@ function Step1View({
           }
         }, dev.managementNo, " / ", dev.unitNo), showExtraRemarks && /*#__PURE__*/React.createElement("span", {
           style: remarksStyle
-        }, "📝 ", remarksVal));
+        }, "\uD83D\uDCDD ", remarksVal));
       })());
     });
   })()))) : /*#__PURE__*/React.createElement("div", {
@@ -2824,7 +2853,7 @@ function Step1View({
         color: C.green,
         whiteSpace: "nowrap"
       }
-    }, "✓ ", k), /*#__PURE__*/React.createElement("span", {
+    }, "\u2713 ", k), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 14,
         fontWeight: 700,
@@ -2845,7 +2874,7 @@ function Step1View({
         fontWeight: 700,
         whiteSpace: "nowrap"
       }
-    }, "修正"))), /*#__PURE__*/React.createElement("div", {
+    }, "\u4FEE\u6B63"))), /*#__PURE__*/React.createElement("div", {
       style: {
         background: C.white,
         borderRadius: 12,
@@ -2874,7 +2903,7 @@ function Step1View({
         color: C.green,
         whiteSpace: "nowrap"
       }
-    }, "✓ 建物"), /*#__PURE__*/React.createElement("span", {
+    }, "\u2713 \u5EFA\u7269"), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 14,
         fontWeight: 700,
@@ -2893,7 +2922,7 @@ function Step1View({
         color: C.green,
         whiteSpace: "nowrap"
       }
-    }, "✓ 階"), /*#__PURE__*/React.createElement("span", {
+    }, "\u2713 \u968E"), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 14,
         fontWeight: 700,
@@ -2914,7 +2943,7 @@ function Step1View({
         fontWeight: 700,
         whiteSpace: "nowrap"
       }
-    }, "修正"))));
+    }, "\u4FEE\u6B63"))));
   })(), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.white,
@@ -2945,7 +2974,7 @@ function Step1View({
       color: C.green,
       whiteSpace: "nowrap"
     }
-  }, "✓ ", k), /*#__PURE__*/React.createElement("span", {
+  }, "\u2713 ", k), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 14,
       fontWeight: 700,
@@ -2976,7 +3005,7 @@ function Step1View({
       fontWeight: 700,
       whiteSpace: "nowrap"
     }
-  }, "修正"))));
+  }, "\u4FEE\u6B63"))));
   const seqIndoor = focusSeq || [];
   const aiIndoor = seqIndoor.findIndex(f => f.code === activeCode);
   const activeIsCheckIndoor = !!activeCode && !!isCheckCode && isCheckCode(activeCode);
@@ -3029,7 +3058,7 @@ function Step1View({
       color: C.teal,
       marginBottom: 8
     }
-  }, "🏭 室外機点検チェック"), /*#__PURE__*/React.createElement("table", {
+  }, "\uD83C\uDFED \u5BA4\u5916\u6A5F\u70B9\u691C\u30C1\u30A7\u30C3\u30AF"), /*#__PURE__*/React.createElement("table", {
     style: {
       width: "100%",
       borderCollapse: "collapse"
@@ -3044,7 +3073,7 @@ function Step1View({
       color: C.g500,
       borderBottom: "2px solid " + C.g200
     }
-  }, "項目"), /*#__PURE__*/React.createElement("th", {
+  }, "\u9805\u76EE"), /*#__PURE__*/React.createElement("th", {
     style: {
       padding: "6px 8px",
       textAlign: "left",
@@ -3053,7 +3082,7 @@ function Step1View({
       color: C.g500,
       borderBottom: "2px solid " + C.g200
     }
-  }, "点検内容"), /*#__PURE__*/React.createElement("th", {
+  }, "\u70B9\u691C\u5185\u5BB9"), /*#__PURE__*/React.createElement("th", {
     style: {
       width: 110,
       padding: "6px 8px",
@@ -3063,7 +3092,7 @@ function Step1View({
       color: C.g500,
       borderBottom: "2px solid " + C.g200
     }
-  }, "○×"))), /*#__PURE__*/React.createElement("tbody", null, outFields.map((f, i) => {
+  }, "\u25CB\xD7"))), /*#__PURE__*/React.createElement("tbody", null, outFields.map((f, i) => {
     const val = form.checks?.[f.code] || "";
     const act = s1Focus === f.code;
     return /*#__PURE__*/React.createElement("tr", {
@@ -3139,7 +3168,7 @@ function Step1View({
         color: "#92400E",
         fontWeight: 700
       }
-    }, "📋 一次保存済み：前回の点検前状態「", prevSummary, "」");
+    }, "\uD83D\uDCCB \u4E00\u6B21\u4FDD\u5B58\u6E08\u307F\uFF1A\u524D\u56DE\u306E\u70B9\u691C\u524D\u72B6\u614B\u300C", prevSummary, "\u300D");
   })(), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -3178,14 +3207,14 @@ function Step1View({
       fontWeight: 700,
       color: C.teal
     }
-  }, "点検前状態")), /*#__PURE__*/React.createElement("div", {
+  }, "\u70B9\u691C\u524D\u72B6\u614B")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
       color: C.g400,
       marginTop: 2,
       paddingLeft: 25
     }
-  }, "任意")), /*#__PURE__*/React.createElement("div", {
+  }, "\u4EFB\u610F")), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       background: C.teal + "05",
@@ -3262,7 +3291,7 @@ function Step1View({
       color: C.g500,
       marginBottom: 2
     }
-  }, "設定温度"), /*#__PURE__*/React.createElement("button", {
+  }, "\u8A2D\u5B9A\u6E29\u5EA6"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setInfo("preSetTemp", Math.min(30, parseFloat(form.preSetTemp || 20) + 0.5).toFixed(1)),
     style: {
       width: 48,
@@ -3275,7 +3304,7 @@ function Step1View({
       background: C.white,
       color: C.g600
     }
-  }, "＋"), /*#__PURE__*/React.createElement("div", {
+  }, "\uFF0B"), /*#__PURE__*/React.createElement("div", {
     onClick: () => setS1Focus(s1Focus === "preSetTemp" ? null : "preSetTemp"),
     style: {
       width: 80,
@@ -3297,7 +3326,7 @@ function Step1View({
       fontWeight: 400,
       color: C.g400
     }
-  }, "°C")), /*#__PURE__*/React.createElement("button", {
+  }, "\xB0C")), /*#__PURE__*/React.createElement("button", {
     onClick: () => setInfo("preSetTemp", Math.max(16, parseFloat(form.preSetTemp || 20) - 0.5).toFixed(1)),
     style: {
       width: 48,
@@ -3310,7 +3339,7 @@ function Step1View({
       background: C.white,
       color: C.g600
     }
-  }, "－")))), (() => {
+  }, "\uFF0D")))), (() => {
     const preStateSet = !!(form.preOperation || form.preMode || form.preWind || form.preSetTemp);
     return /*#__PURE__*/React.createElement("button", {
       onClick: () => {
@@ -3367,7 +3396,7 @@ function Step1View({
       color: C.green,
       whiteSpace: "nowrap"
     }
-  }, "✓ 点検前状態"), /*#__PURE__*/React.createElement("span", {
+  }, "\u2713 \u70B9\u691C\u524D\u72B6\u614B"), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 13,
       fontWeight: 700,
@@ -3388,7 +3417,7 @@ function Step1View({
       fontWeight: 700,
       whiteSpace: "nowrap"
     }
-  }, "修正"))) : null, inspectionMode === "indoor" && s1DevDone && !devSearch && /*#__PURE__*/React.createElement("div", {
+  }, "\u4FEE\u6B63"))) : null, inspectionMode === "indoor" && s1DevDone && !devSearch && /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       display: "flex",
@@ -3453,10 +3482,10 @@ function Step1View({
       fontWeight: 700,
       color: C.g500
     }
-  }, "📝 備考・特記事項"), /*#__PURE__*/React.createElement("textarea", {
+  }, "\uD83D\uDCDD \u5099\u8003\u30FB\u7279\u8A18\u4E8B\u9805"), /*#__PURE__*/React.createElement("textarea", {
     value: form.remarks,
     onChange: e => setInfo("remarks", e.target.value),
-    placeholder: "異常箇所、特記事項など...",
+    placeholder: "\u7570\u5E38\u7B87\u6240\u3001\u7279\u8A18\u4E8B\u9805\u306A\u3069...",
     style: {
       flex: 1,
       width: "100%",
@@ -3586,16 +3615,16 @@ function Step1View({
     style: {
       color: C.g200
     }
-  }, "—") : s1Focus === "devSearch" ? devSearch || /*#__PURE__*/React.createElement("span", {
+  }, "\u2014") : s1Focus === "devSearch" ? devSearch || /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 13,
       color: C.g300
     }
-  }, "入力してください") : /*#__PURE__*/React.createElement("span", {
+  }, "\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044") : /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 13
     }
-  }, "—")))), isCheckFocus ? /*#__PURE__*/React.createElement("div", {
+  }, "\u2014")))), isCheckFocus ? /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -3690,7 +3719,7 @@ function Step1View({
       alignItems: "center",
       justifyContent: "center"
     }
-  }, "⌫"), /*#__PURE__*/React.createElement("button", {
+  }, "\u232B"), /*#__PURE__*/React.createElement("button", {
     disabled: !s1Focus,
     onMouseDown: e => e.preventDefault(),
     onClick: () => {
@@ -3727,7 +3756,7 @@ function Step1View({
       textAlign: "center",
       lineHeight: 1.6
     }
-  }, isCheckFocus ? /*#__PURE__*/React.createElement(React.Fragment, null, "チェック項目をタップ", /*#__PURE__*/React.createElement("br", null), "すると連続入力できます") : /*#__PURE__*/React.createElement(React.Fragment, null, "検索窓または", /*#__PURE__*/React.createElement("br", null), "設定温度をタップ")))));
+  }, isCheckFocus ? /*#__PURE__*/React.createElement(React.Fragment, null, "\u30C1\u30A7\u30C3\u30AF\u9805\u76EE\u3092\u30BF\u30C3\u30D7", /*#__PURE__*/React.createElement("br", null), "\u3059\u308B\u3068\u9023\u7D9A\u5165\u529B\u3067\u304D\u307E\u3059") : /*#__PURE__*/React.createElement(React.Fragment, null, "\u691C\u7D22\u7A93\u307E\u305F\u306F", /*#__PURE__*/React.createElement("br", null), "\u8A2D\u5B9A\u6E29\u5EA6\u3092\u30BF\u30C3\u30D7")))));
 }
 function ACInspectionApp() {
   const [view, setView] = useState("form");
@@ -3843,6 +3872,9 @@ function ACInspectionApp() {
   const listRef = useRef();
   const devRef = useRef();
   const inspRef = useRef();
+  const deletedIds = useRef(new Set()); // 削除直後に古いFirebase更新が届いて復活するのを防ぐ
+  const settingsLoaded = useRef(false); // 初回のFirebase読み込みが終わるまでは設定を書き戻さない（初期値での上書き防止）
+
   useEffect(() => {
     if (view === "settings") {
       setTmpLim(JSON.parse(JSON.stringify(limits)));
@@ -3874,6 +3906,99 @@ function ACInspectionApp() {
   useEffect(() => {
     lsSet(LS_KEYS.vis, vis);
   }, [vis]);
+
+  // ─── Firebase：設定データの購読（他端末での変更を即座に反映）───
+  // Firebase側にまだデータが無い（初回セットアップ直後）場合は、ローカルの設定を初期データとして書き込む。
+  useEffect(() => {
+    if (!db) return;
+    const ref = db.ref("appSettings");
+    const handler = snap => {
+      const d = snap.val();
+      if (d) {
+        if (d.devList) setDevList(d.devList);
+        if (d.devColumns) setDevColumns(d.devColumns);
+        if (d.devVisibleCols) setDevVisibleCols(d.devVisibleCols);
+        if (d.inspList) setInspList(d.inspList);
+        if (d.checkFields) setCheckFields(d.checkFields);
+        if (d.limits) setLimits(d.limits);
+        if (d.vis) setVis(d.vis);
+      } else {
+        ref.set({
+          devList,
+          devColumns,
+          devVisibleCols,
+          inspList,
+          checkFields,
+          limits,
+          vis
+        });
+      }
+      settingsLoaded.current = true;
+    };
+    ref.on("value", handler);
+    return () => ref.off("value", handler);
+  }, []);
+  // 初回読み込み後にローカルで設定を変更したら、Firebaseにも書き戻して他端末に伝える
+  useEffect(() => {
+    if (db && settingsLoaded.current) db.ref("appSettings").update({
+      devList
+    });
+  }, [devList]);
+  useEffect(() => {
+    if (db && settingsLoaded.current) db.ref("appSettings").update({
+      devColumns
+    });
+  }, [devColumns]);
+  useEffect(() => {
+    if (db && settingsLoaded.current) db.ref("appSettings").update({
+      devVisibleCols
+    });
+  }, [devVisibleCols]);
+  useEffect(() => {
+    if (db && settingsLoaded.current) db.ref("appSettings").update({
+      inspList
+    });
+  }, [inspList]);
+  useEffect(() => {
+    if (db && settingsLoaded.current) db.ref("appSettings").update({
+      checkFields
+    });
+  }, [checkFields]);
+  useEffect(() => {
+    if (db && settingsLoaded.current) db.ref("appSettings").update({
+      limits
+    });
+  }, [limits]);
+  useEffect(() => {
+    if (db && settingsLoaded.current) db.ref("appSettings").update({
+      vis
+    });
+  }, [vis]);
+
+  // ─── Firebase：点検記録の購読（室内機・室外機それぞれ全件をリアルタイム反映）───
+  useEffect(() => {
+    if (!db) return;
+    const refIn = db.ref("inspectionRecords/indoor");
+    const refOut = db.ref("inspectionRecords/outdoor");
+    const toArr = snap => {
+      const arr = [];
+      snap.forEach(c => {
+        if (!deletedIds.current.has(c.key)) arr.push({
+          ...c.val(),
+          id: c.key
+        });
+      });
+      return arr;
+    };
+    const hIn = snap => setIndoorRecords(toArr(snap));
+    const hOut = snap => setOutdoorRecords(toArr(snap));
+    refIn.on("value", hIn);
+    refOut.on("value", hOut);
+    return () => {
+      refIn.off("value", hIn);
+      refOut.off("value", hOut);
+    };
+  }, []);
   const showFlash = msg => {
     setFlash(msg);
     setTimeout(() => setFlash(""), 2400);
@@ -4040,14 +4165,16 @@ function ACInspectionApp() {
     setLastInsp(form.inspector);
     setLastDate(form.inspectionDate);
     const saved = {
-      ...form
+      ...form,
+      id: form.id || crypto.randomUUID()
     };
     if (editIdx !== null) {
-      setRecords(p => p.map((r, i) => i === editIdx ? saved : r));
+      setRecords(p => p.map(r => r.id === saved.id ? saved : r));
       setEditIdx(null);
     } else {
       setRecords(p => [...p, saved]);
     }
+    saveRecordRemote(inspectionMode, saved);
     setSaveModal({
       ...saved,
       _mode: mode
@@ -4079,39 +4206,43 @@ function ACInspectionApp() {
     setNumDisp("");
     isOvr.current = false;
   };
-  const handleEdit = i => {
-    setForm({
-      ...records[i]
-    });
-    setEditIdx(i);
-    setStep(1);
-    setView("form");
+  const handleEdit = id => {
+    const r = records.find(x => x.id === id);
+    if (r) {
+      setForm({
+        ...r
+      });
+      setEditIdx(id);
+      setStep(1);
+      setView("form");
+    }
   };
-  const handleDel = i => {
+  const handleDel = id => {
     if (!window.confirm("削除しますか？")) return;
-    setRecords(p => p.filter((_, j) => j !== i));
-    if (editIdx === i) {
+    deletedIds.current.add(id);
+    setRecords(p => p.filter(r => r.id !== id));
+    deleteRecordRemote(inspectionMode, id);
+    if (editIdx === id) {
       setEditIdx(null);
       setForm(emptyForm(lastInsp, lastDate));
     }
   };
   // 一覧（室内機/室外機まとめ表示）用：対象の記録がどちらのモードかを指定して編集・削除する
   const handleEditFor = (rec, mode) => {
-    const arr = mode === "indoor" ? indoorRecords : outdoorRecords;
-    const idx = arr.indexOf(rec);
-    if (idx < 0) return;
     setInspectionMode(mode);
     setForm({
       ...rec
     });
-    setEditIdx(idx);
+    setEditIdx(rec.id);
     setStep(1);
     setView("form");
   };
   const handleDelFor = (rec, mode) => {
     if (!window.confirm("削除しますか？")) return;
+    deletedIds.current.add(rec.id);
     const setRec = mode === "indoor" ? setIndoorRecords : setOutdoorRecords;
-    setRec(p => p.filter(r => r !== rec));
+    setRec(p => p.filter(r => r.id !== rec.id));
+    deleteRecordRemote(mode, rec.id);
   };
   const handleInputFor = (row, mode) => {
     setInspectionMode(mode);
@@ -4307,19 +4438,23 @@ function ACInspectionApp() {
   };
   const handleStep1TmpSave = () => {
     if (!step1Valid) return;
-    const saved = {
-      ...form,
-      values: emptyVal()
-    };
     setLastInsp(form.inspector);
     setLastDate(form.inspectionDate);
-    if (editIdx !== null) {
-      setRecords(p => p.map((r, i) => i === editIdx ? saved : r));
-      setEditIdx(null);
-    } else {
-      const ex = records.findIndex(r => r.managementNo === form.managementNo && r.unitNo === form.unitNo);
-      if (ex >= 0) setRecords(p => p.map((r, i) => i === ex ? saved : r));else setRecords(p => [...p, saved]);
+    let id = form.id;
+    if (!id) {
+      if (editIdx !== null) id = editIdx;else {
+        const ex = records.find(r => r.managementNo === form.managementNo && r.unitNo === form.unitNo);
+        id = ex ? ex.id : crypto.randomUUID();
+      }
     }
+    const saved = {
+      ...form,
+      values: emptyVal(),
+      id
+    };
+    setRecords(p => p.some(r => r.id === id) ? p.map(r => r.id === id ? saved : r) : [...p, saved]);
+    if (editIdx !== null) setEditIdx(null);
+    saveRecordRemote(inspectionMode, saved);
     setForm(p => ({
       ...emptyForm(p.inspector, p.inspectionDate),
       inspector: p.inspector,
@@ -4522,7 +4657,7 @@ function ACInspectionApp() {
       fontSize: 16,
       letterSpacing: "0.04em"
     }
-  }, "🌡️ エアコン点検"), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83C\uDF21\uFE0F \u30A8\u30A2\u30B3\u30F3\u70B9\u691C"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -4569,7 +4704,7 @@ function ACInspectionApp() {
       opacity: tRows.length > 0 ? 1 : 0.5,
       whiteSpace: "nowrap"
     }
-  }, "📊 集計")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCCA \u96C6\u8A08")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -4589,7 +4724,7 @@ function ACInspectionApp() {
       background: view === "settings" ? C.white : "rgba(255,255,255,0.18)",
       color: view === "settings" ? C.navy : C.white
     }
-  }, "⚙️ 設定")))), /*#__PURE__*/React.createElement("div", {
+  }, "\u2699\uFE0F \u8A2D\u5B9A")))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       overflow: "hidden",
@@ -4719,7 +4854,7 @@ function ACInspectionApp() {
       fontWeight: 800,
       color: C.navy
     }
-  }, "📋 データ一覧"), /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDCCB \u30C7\u30FC\u30BF\u4E00\u89A7"), /*#__PURE__*/React.createElement("button", {
     onClick: handleCSVExportClick,
     style: {
       padding: "7px 14px",
@@ -4731,7 +4866,7 @@ function ACInspectionApp() {
       background: filteredRows.length > 0 ? C.teal : C.g200,
       color: filteredRows.length > 0 ? C.white : C.g400
     }
-  }, "💾 CSV出力")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCBE CSV\u51FA\u529B")), /*#__PURE__*/React.createElement("div", {
     style: {
       flexShrink: 0,
       display: "flex",
@@ -4802,7 +4937,7 @@ function ACInspectionApp() {
         color: C.g400,
         minWidth: 32
       }
-    }, "建物："), /*#__PURE__*/React.createElement("button", {
+    }, "\u5EFA\u7269\uFF1A"), /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         setBuildingFilter(null);
         setFloorFilter(null);
@@ -4817,7 +4952,7 @@ function ACInspectionApp() {
         background: !buildingFilter ? C.navy : C.white,
         color: !buildingFilter ? C.white : C.g600
       }
-    }, "すべて"), buildings.map(b => /*#__PURE__*/React.createElement("button", {
+    }, "\u3059\u3079\u3066"), buildings.map(b => /*#__PURE__*/React.createElement("button", {
       key: b,
       onClick: () => {
         setBuildingFilter(p => {
@@ -4857,7 +4992,7 @@ function ACInspectionApp() {
         color: C.g400,
         minWidth: 32
       }
-    }, "階："), /*#__PURE__*/React.createElement("button", {
+    }, "\u968E\uFF1A"), /*#__PURE__*/React.createElement("button", {
       onClick: () => setFloorFilter(null),
       style: {
         padding: "5px 11px",
@@ -4869,7 +5004,7 @@ function ACInspectionApp() {
         background: !floorFilter ? C.teal : C.white,
         color: !floorFilter ? C.white : C.g600
       }
-    }, "すべて"), floorsForBuilding.map(fl => /*#__PURE__*/React.createElement("button", {
+    }, "\u3059\u3079\u3066"), floorsForBuilding.map(fl => /*#__PURE__*/React.createElement("button", {
       key: fl,
       onClick: () => setFloorFilter(floorFilter === fl ? null : fl),
       style: {
@@ -4902,7 +5037,7 @@ function ACInspectionApp() {
       color: C.teal,
       flex: 1
     }
-  }, "🏢 ", floorFilter, " のみ表示中"), /*#__PURE__*/React.createElement("button", {
+  }, "\uD83C\uDFE2 ", floorFilter, " \u306E\u307F\u8868\u793A\u4E2D"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setFloorFilter(null),
     style: {
       padding: "5px 12px",
@@ -4914,7 +5049,7 @@ function ACInspectionApp() {
       fontSize: 11,
       fontWeight: 700
     }
-  }, "✕ 解除"), /*#__PURE__*/React.createElement("button", {
+  }, "\u2715 \u89E3\u9664"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setShowStats(true),
     style: {
       padding: "5px 12px",
@@ -4926,7 +5061,7 @@ function ACInspectionApp() {
       fontSize: 11,
       fontWeight: 700
     }
-  }, "📊 集計へ戻る")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCCA \u96C6\u8A08\u3078\u623B\u308B")), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       overflowX: "auto",
@@ -4947,7 +5082,7 @@ function ACInspectionApp() {
       fontSize: 36,
       marginBottom: 8
     }
-  }, "📭"), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCED"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 700,
       fontSize: 14
@@ -4964,7 +5099,7 @@ function ACInspectionApp() {
       top: 0,
       zIndex: 2
     }
-  }, [...(devVisibleCols.length > 0 ? devVisibleCols : ["階", "部屋名", "管理番号", "機器番号"]), "室内機", "室外機", "点検日", "点検者", "運転", "モード", "風量", "設定温度"].map(h => {
+  }, [...(devVisibleCols.length > 0 ? devVisibleCols : ["階", "部屋名", "管理番号", "機器番号"]), "入力状況", "点検日", "点検者", "運転", "モード", "風量", "設定温度"].map(h => {
     const isSort = sortCol === h;
     return /*#__PURE__*/React.createElement("th", {
       key: h,
@@ -5023,7 +5158,7 @@ function ACInspectionApp() {
       borderBottom: "2px solid " + C.g200,
       borderLeft: "2px solid " + C.g200
     }
-  }, "チェック結果"), /*#__PURE__*/React.createElement("th", {
+  }, "\u30C1\u30A7\u30C3\u30AF\u7D50\u679C"), /*#__PURE__*/React.createElement("th", {
     style: {
       background: C.g100,
       color: C.g600,
@@ -5034,7 +5169,7 @@ function ACInspectionApp() {
       borderBottom: "2px solid " + C.g200,
       borderLeft: "2px solid " + C.g200
     }
-  }, "備考"))), /*#__PURE__*/React.createElement("tbody", null, filteredRows.map((row, i) => {
+  }, "\u5099\u8003"))), /*#__PURE__*/React.createElement("tbody", null, filteredRows.map((row, i) => {
     const ir = row.indoorRecord,
       or_ = row.outdoorRecord;
     const indoorDone = rowIndoorDone(row),
@@ -5050,17 +5185,18 @@ function ACInspectionApp() {
       label
     }) => /*#__PURE__*/React.createElement("td", {
       style: {
-        padding: "5px 6px",
-        textAlign: "center",
+        padding: "6px 8px",
+        textAlign: "left",
         borderBottom: "1px solid " + C.g100,
         background: bg
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
-        flexDirection: "column",
+        flexDirection: "row",
         alignItems: "center",
-        gap: 3
+        gap: 6,
+        justifyContent: "flex-start"
       }
     }, done ? /*#__PURE__*/React.createElement("span", {
       style: {
@@ -5070,9 +5206,10 @@ function ACInspectionApp() {
         fontSize: 9,
         padding: "2px 6px",
         borderRadius: 5,
-        whiteSpace: "nowrap"
+        whiteSpace: "nowrap",
+        flexShrink: 0
       }
-    }, "入力済") : /*#__PURE__*/React.createElement("span", {
+    }, "\u5165\u529B\u6E08") : /*#__PURE__*/React.createElement("span", {
       style: {
         background: "#FEF2F2",
         color: C.red,
@@ -5080,13 +5217,14 @@ function ACInspectionApp() {
         fontSize: 9,
         padding: "2px 6px",
         borderRadius: 5,
-        whiteSpace: "nowrap"
+        whiteSpace: "nowrap",
+        flexShrink: 0
       }
-    }, "未入力"), rec ? /*#__PURE__*/React.createElement("div", {
+    }, "\u672A\u5165\u529B"), rec ? /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
-        gap: 2,
-        justifyContent: "center"
+        gap: 3,
+        flexShrink: 0
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: e => {
@@ -5094,7 +5232,7 @@ function ACInspectionApp() {
         handleEditFor(rec, mode);
       },
       style: {
-        padding: "2px 5px",
+        padding: "2px 6px",
         borderRadius: 4,
         border: "none",
         cursor: "pointer",
@@ -5103,13 +5241,13 @@ function ACInspectionApp() {
         fontSize: 9,
         fontWeight: 700
       }
-    }, "編集"), /*#__PURE__*/React.createElement("button", {
+    }, "\u7DE8\u96C6"), /*#__PURE__*/React.createElement("button", {
       onClick: e => {
         e.stopPropagation();
         handleDelFor(rec, mode);
       },
       style: {
-        padding: "2px 5px",
+        padding: "2px 6px",
         borderRadius: 4,
         border: "none",
         cursor: "pointer",
@@ -5118,13 +5256,13 @@ function ACInspectionApp() {
         fontSize: 9,
         fontWeight: 700
       }
-    }, "削除")) : /*#__PURE__*/React.createElement("button", {
+    }, "\u524A\u9664")) : /*#__PURE__*/React.createElement("button", {
       onClick: e => {
         e.stopPropagation();
         handleInputFor(row, mode);
       },
       style: {
-        padding: "2px 6px",
+        padding: "2px 7px",
         borderRadius: 4,
         border: "1.5px solid " + C.blue,
         cursor: "pointer",
@@ -5132,19 +5270,20 @@ function ACInspectionApp() {
         color: C.blue,
         fontSize: 9,
         fontWeight: 700,
-        whiteSpace: "nowrap"
+        whiteSpace: "nowrap",
+        flexShrink: 0
       }
-    }, label, "入力")));
+    }, label, "\u5165\u529B")));
     const NACell = () => /*#__PURE__*/React.createElement("td", {
       style: {
-        padding: "5px 6px",
-        textAlign: "center",
+        padding: "6px 8px",
+        textAlign: "left",
         borderBottom: "1px solid " + C.g100,
         background: bg,
         color: C.g300,
         fontSize: 11
       }
-    }, "—");
+    }, "\u2014");
     return /*#__PURE__*/React.createElement("tr", {
       key: i,
       style: {
@@ -5174,17 +5313,17 @@ function ACInspectionApp() {
           fontWeight: 600
         }
       }, val || "—");
-    }), rType === "outdoor" ? /*#__PURE__*/React.createElement(NACell, null) : /*#__PURE__*/React.createElement(StatusCell, {
-      rec: ir,
-      done: indoorDone,
-      mode: "indoor",
-      label: "🏠"
-    }), rType === "indoor" ? /*#__PURE__*/React.createElement(NACell, null) : /*#__PURE__*/React.createElement(StatusCell, {
+    }), rType === "outdoor" ? /*#__PURE__*/React.createElement(StatusCell, {
       rec: or_,
       done: outdoorDone,
       mode: "outdoor",
-      label: "🏭"
-    }), [metaSrc?.inspectionDate, metaSrc?.inspector, metaSrc?.preOperation, metaSrc?.preMode, metaSrc?.preWind, metaSrc?.preSetTemp].map((v, j) => /*#__PURE__*/React.createElement("td", {
+      label: "\uD83C\uDFED"
+    }) : rType === "indoor" ? /*#__PURE__*/React.createElement(StatusCell, {
+      rec: ir,
+      done: indoorDone,
+      mode: "indoor",
+      label: "\uD83C\uDFE0"
+    }) : /*#__PURE__*/React.createElement(NACell, null), [metaSrc?.inspectionDate, metaSrc?.inspector, metaSrc?.preOperation, metaSrc?.preMode, metaSrc?.preWind, metaSrc?.preSetTemp].map((v, j) => /*#__PURE__*/React.createElement("td", {
       key: j,
       style: {
         padding: "7px 8px",
@@ -5291,14 +5430,14 @@ function ACInspectionApp() {
     style: {
       fontSize: 18
     }
-  }, "💾"), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCBE"), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       fontSize: 11,
       color: C.g600,
       lineHeight: 1.5
     }
-  }, "機器リスト・点検者リスト・点検項目・表示設定・正常値範囲は、このブラウザに自動保存されます。", /*#__PURE__*/React.createElement("br", null), "アプリを更新（再読込）しても読み込み直す必要はありません。"), /*#__PURE__*/React.createElement("button", {
+  }, "\u6A5F\u5668\u30EA\u30B9\u30C8\u30FB\u70B9\u691C\u8005\u30EA\u30B9\u30C8\u30FB\u70B9\u691C\u9805\u76EE\u30FB\u8868\u793A\u8A2D\u5B9A\u30FB\u6B63\u5E38\u5024\u7BC4\u56F2\u306F\u3001\u3053\u306E\u30D6\u30E9\u30A6\u30B6\u306B\u81EA\u52D5\u4FDD\u5B58\u3055\u308C\u307E\u3059\u3002", /*#__PURE__*/React.createElement("br", null), "\u30A2\u30D7\u30EA\u3092\u66F4\u65B0\uFF08\u518D\u8AAD\u8FBC\uFF09\u3057\u3066\u3082\u8AAD\u307F\u8FBC\u307F\u76F4\u3059\u5FC5\u8981\u306F\u3042\u308A\u307E\u305B\u3093\u3002"), /*#__PURE__*/React.createElement("button", {
     onClick: () => {
       if (!window.confirm("機器リスト・点検者リスト・点検項目・表示設定・正常値範囲の保存データを全て削除します。よろしいですか？")) return;
       Object.values(LS_KEYS).forEach(k => {
@@ -5387,7 +5526,7 @@ function ACInspectionApp() {
       fontWeight: 700,
       whiteSpace: "nowrap"
     }
-  }, "🗑️ 保存データを削除")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDDD1\uFE0F \u4FDD\u5B58\u30C7\u30FC\u30BF\u3092\u524A\u9664")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(3,1fr)",
@@ -5568,7 +5707,7 @@ function ACInspectionApp() {
         alignItems: "center",
         justifyContent: "center"
       }
-    }, "✕"));
+    }, "\u2715"));
   })(), /*#__PURE__*/React.createElement("div", {
     style: {
       overflowY: "auto",
@@ -5605,7 +5744,7 @@ function ACInspectionApp() {
       marginBottom: 10,
       lineHeight: 1.6
     }
-  }, "1行目を項目名として自動認識します。"), /*#__PURE__*/React.createElement("input", {
+  }, "1\u884C\u76EE\u3092\u9805\u76EE\u540D\u3068\u3057\u3066\u81EA\u52D5\u8A8D\u8B58\u3057\u307E\u3059\u3002"), /*#__PURE__*/React.createElement("input", {
     ref: devRef,
     type: "file",
     accept: ".csv,.xlsx,.xls",
@@ -5631,20 +5770,20 @@ function ACInspectionApp() {
       fontWeight: 700,
       fontSize: 13
     }
-  }, "📁 CSVを選択"), devList.length > 0 && /*#__PURE__*/React.createElement("span", {
+  }, "\uD83D\uDCC1 CSV\u3092\u9078\u629E"), devList.length > 0 && /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 13,
       color: C.green,
       fontWeight: 700
     }
-  }, "✅ ", devList.length, "件読込済"))), devList.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, "\u2705 ", devList.length, "\u4EF6\u8AAD\u8FBC\u6E08"))), devList.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       fontWeight: 700,
       color: C.g500,
       marginBottom: 6
     }
-  }, "プレビュー（先頭5件）"), /*#__PURE__*/React.createElement("div", {
+  }, "\u30D7\u30EC\u30D3\u30E5\u30FC\uFF08\u5148\u982D5\u4EF6\uFF09"), /*#__PURE__*/React.createElement("div", {
     style: {
       overflowX: "auto"
     }
@@ -5695,7 +5834,7 @@ function ACInspectionApp() {
       color: C.g400,
       fontSize: 11
     }
-  }, "…他 ", devList.length - 5, "件"))))))), id === "cols" && /*#__PURE__*/React.createElement("div", null, devColumns.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, "\u2026\u4ED6 ", devList.length - 5, "\u4EF6"))))))), id === "cols" && /*#__PURE__*/React.createElement("div", null, devColumns.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "12px 16px",
       background: "#FFF7ED",
@@ -5704,14 +5843,14 @@ function ACInspectionApp() {
       color: "#92400E",
       border: "1.5px solid #F59E0B"
     }
-  }, "⚠️ 先に機器リストCSVを読み込んでください。読み込み後に列が自動抽出されます。") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
+  }, "\u26A0\uFE0F \u5148\u306B\u6A5F\u5668\u30EA\u30B9\u30C8CSV\u3092\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\u3002\u8AAD\u307F\u8FBC\u307F\u5F8C\u306B\u5217\u304C\u81EA\u52D5\u62BD\u51FA\u3055\u308C\u307E\u3059\u3002") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 12,
       color: C.g500,
       marginBottom: 10,
       lineHeight: 1.6
     }
-  }, "チェックした列を「入室可否チェック」と「機器選択リスト」に表示します。", /*#__PURE__*/React.createElement("br", null), "※ 「本日の対象エリア」の階ボタンには影響しません。"), /*#__PURE__*/React.createElement("div", {
+  }, "\u30C1\u30A7\u30C3\u30AF\u3057\u305F\u5217\u3092\u300C\u5165\u5BA4\u53EF\u5426\u30C1\u30A7\u30C3\u30AF\u300D\u3068\u300C\u6A5F\u5668\u9078\u629E\u30EA\u30B9\u30C8\u300D\u306B\u8868\u793A\u3057\u307E\u3059\u3002", /*#__PURE__*/React.createElement("br", null), "\u203B \u300C\u672C\u65E5\u306E\u5BFE\u8C61\u30A8\u30EA\u30A2\u300D\u306E\u968E\u30DC\u30BF\u30F3\u306B\u306F\u5F71\u97FF\u3057\u307E\u305B\u3093\u3002"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -5729,7 +5868,7 @@ function ACInspectionApp() {
       fontWeight: 700,
       cursor: "pointer"
     }
-  }, "全選択"), /*#__PURE__*/React.createElement("button", {
+  }, "\u5168\u9078\u629E"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setDevVisibleCols([]),
     style: {
       padding: "5px 12px",
@@ -5741,7 +5880,7 @@ function ACInspectionApp() {
       fontWeight: 700,
       cursor: "pointer"
     }
-  }, "全解除")), /*#__PURE__*/React.createElement("div", {
+  }, "\u5168\u89E3\u9664")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -5785,7 +5924,7 @@ function ACInspectionApp() {
         fontSize: 11,
         color: C.g400
       }
-    }, devList.filter(d => d._raw && d._raw[col]).length, "件に値あり"));
+    }, devList.filter(d => d._raw && d._raw[col]).length, "\u4EF6\u306B\u5024\u3042\u308A"));
   })))), id === "checkitems" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 13,
@@ -5793,14 +5932,14 @@ function ACInspectionApp() {
       marginBottom: 10,
       lineHeight: 1.6
     }
-  }, "Excelファイルを読み込みます。", /*#__PURE__*/React.createElement("br", null), "1列目に項目名、2列目にカテゴリ（省略可）を縦に記載してください。", /*#__PURE__*/React.createElement("br", null), "例：", /*#__PURE__*/React.createElement("code", {
+  }, "Excel\u30D5\u30A1\u30A4\u30EB\u3092\u8AAD\u307F\u8FBC\u307F\u307E\u3059\u3002", /*#__PURE__*/React.createElement("br", null), "1\u5217\u76EE\u306B\u9805\u76EE\u540D\u30012\u5217\u76EE\u306B\u30AB\u30C6\u30B4\u30EA\uFF08\u7701\u7565\u53EF\uFF09\u3092\u7E26\u306B\u8A18\u8F09\u3057\u3066\u304F\u3060\u3055\u3044\u3002", /*#__PURE__*/React.createElement("br", null), "\u4F8B\uFF1A", /*#__PURE__*/React.createElement("code", {
     style: {
       background: C.g100,
       padding: "1px 6px",
       borderRadius: 4,
       fontSize: 12
     }
-  }, "配管支持異常の有無 / 室内機")), /*#__PURE__*/React.createElement("input", {
+  }, "\u914D\u7BA1\u652F\u6301\u7570\u5E38\u306E\u6709\u7121 / \u5BA4\u5185\u6A5F")), /*#__PURE__*/React.createElement("input", {
     type: "file",
     accept: ".xlsx,.xls,.csv",
     style: {
@@ -5859,7 +5998,7 @@ function ACInspectionApp() {
       fontWeight: 700,
       fontSize: 13
     }
-  }, "📁 Excelを選択"), checkFields.length > 0 && /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDCC1 Excel\u3092\u9078\u629E"), checkFields.length > 0 && /*#__PURE__*/React.createElement("button", {
     onClick: () => setCheckFields([]),
     style: {
       padding: "8px 14px",
@@ -5871,13 +6010,13 @@ function ACInspectionApp() {
       fontSize: 12,
       fontWeight: 700
     }
-  }, "🗑️ クリア"), checkFields.length > 0 && /*#__PURE__*/React.createElement("span", {
+  }, "\uD83D\uDDD1\uFE0F \u30AF\u30EA\u30A2"), checkFields.length > 0 && /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 13,
       color: C.green,
       fontWeight: 700
     }
-  }, "✅ ", checkFields.length, "項目読込済")), checkFields.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "\u2705 ", checkFields.length, "\u9805\u76EE\u8AAD\u8FBC\u6E08")), checkFields.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -5933,7 +6072,7 @@ function ACInspectionApp() {
       color: C.g500,
       marginBottom: 12
     }
-  }, "フォーマット：1行に1名（ヘッダーなし）"), /*#__PURE__*/React.createElement("input", {
+  }, "\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8\uFF1A1\u884C\u306B1\u540D\uFF08\u30D8\u30C3\u30C0\u30FC\u306A\u3057\uFF09"), /*#__PURE__*/React.createElement("input", {
     ref: inspRef,
     type: "file",
     accept: ".csv,.xlsx,.xls",
@@ -5960,19 +6099,19 @@ function ACInspectionApp() {
       fontWeight: 700,
       fontSize: 14
     }
-  }, "📁 CSVを選択"), inspList.length > 0 && /*#__PURE__*/React.createElement("span", {
+  }, "\uD83D\uDCC1 CSV\u3092\u9078\u629E"), inspList.length > 0 && /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 13,
       color: C.green,
       fontWeight: 700
     }
-  }, "✅ ", inspList.join("・")))), id === "vis" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+  }, "\u2705 ", inspList.join("・")))), id === "vis" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 13,
       color: C.g500,
       marginBottom: 14
     }
-  }, "チェックを外した項目は入力フォーム・一覧から非表示になります。"), [{
+  }, "\u30C1\u30A7\u30C3\u30AF\u3092\u5916\u3057\u305F\u9805\u76EE\u306F\u5165\u529B\u30D5\u30A9\u30FC\u30E0\u30FB\u4E00\u89A7\u304B\u3089\u975E\u8868\u793A\u306B\u306A\u308A\u307E\u3059\u3002"), [{
     fields: INDOOR_FIELDS,
     label: "室内機（インドア）",
     color: C.blue
@@ -6074,7 +6213,7 @@ function ACInspectionApp() {
       fontWeight: 700,
       fontSize: 14
     }
-  }, "保存する"), /*#__PURE__*/React.createElement("button", {
+  }, "\u4FDD\u5B58\u3059\u308B"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setTmpVis(defVis()),
     style: {
       padding: "11px 16px",
@@ -6085,13 +6224,13 @@ function ACInspectionApp() {
       color: C.g500,
       fontSize: 13
     }
-  }, "全選択"))), id === "lim" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+  }, "\u5168\u9078\u629E"))), id === "lim" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 13,
       color: C.g500,
       marginBottom: 14
     }
-  }, "✅ をチェックすると最小・最大の入力欄が表示されます。"), [{
+  }, "\u2705 \u3092\u30C1\u30A7\u30C3\u30AF\u3059\u308B\u3068\u6700\u5C0F\u30FB\u6700\u5927\u306E\u5165\u529B\u6B04\u304C\u8868\u793A\u3055\u308C\u307E\u3059\u3002"), [{
     fields: INDOOR_FIELDS,
     label: "室内機（インドア）",
     color: C.blue
@@ -6192,10 +6331,10 @@ function ACInspectionApp() {
       color: C.g500,
       minWidth: 36
     }
-  }, "最小"), /*#__PURE__*/React.createElement("input", {
+  }, "\u6700\u5C0F"), /*#__PURE__*/React.createElement("input", {
     type: "number",
     step: f.step,
-    placeholder: "—",
+    placeholder: "\u2014",
     value: tmpLim[f.code]?.min || "",
     onChange: e => setTmpLim(p => ({
       ...p,
@@ -6219,16 +6358,16 @@ function ACInspectionApp() {
       fontSize: 13,
       color: C.g300
     }
-  }, "〜"), /*#__PURE__*/React.createElement("span", {
+  }, "\u301C"), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 13,
       color: C.g500,
       minWidth: 36
     }
-  }, "最大"), /*#__PURE__*/React.createElement("input", {
+  }, "\u6700\u5927"), /*#__PURE__*/React.createElement("input", {
     type: "number",
     step: f.step,
-    placeholder: "—",
+    placeholder: "\u2014",
     value: tmpLim[f.code]?.max || "",
     onChange: e => setTmpLim(p => ({
       ...p,
@@ -6268,7 +6407,7 @@ function ACInspectionApp() {
       fontWeight: 700,
       fontSize: 14
     }
-  }, "保存する"), /*#__PURE__*/React.createElement("button", {
+  }, "\u4FDD\u5B58\u3059\u308B"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setTmpLim(defLim()),
     style: {
       padding: "11px 16px",
@@ -6279,7 +6418,7 @@ function ACInspectionApp() {
       color: C.g500,
       fontSize: 13
     }
-  }, "リセット")))))))))), /*#__PURE__*/React.createElement("div", {
+  }, "\u30EA\u30BB\u30C3\u30C8")))))))))), /*#__PURE__*/React.createElement("div", {
     id: "print-area",
     style: {
       display: "none"
@@ -6294,7 +6433,7 @@ function ACInspectionApp() {
       fontSize: 14,
       marginBottom: 10
     }
-  }, "エアコン点検データ一覧"), /*#__PURE__*/React.createElement("table", {
+  }, "\u30A8\u30A2\u30B3\u30F3\u70B9\u691C\u30C7\u30FC\u30BF\u4E00\u89A7"), /*#__PURE__*/React.createElement("table", {
     style: {
       width: "100%",
       borderCollapse: "collapse",
@@ -6352,7 +6491,7 @@ function ACInspectionApp() {
       fontSize: 8,
       color: "#666"
     }
-  }, "出力：", new Date().toLocaleString("ja-JP")))), showStats && /*#__PURE__*/React.createElement("div", {
+  }, "\u51FA\u529B\uFF1A", new Date().toLocaleString("ja-JP")))), showStats && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
@@ -6395,13 +6534,13 @@ function ACInspectionApp() {
     style: {
       fontSize: 22
     }
-  }, "📊"), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCCA"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 16,
       fontWeight: 800,
       color: C.white
     }
-  }, "集計（建物・階・室内機／室外機）")), /*#__PURE__*/React.createElement("button", {
+  }, "\u96C6\u8A08\uFF08\u5EFA\u7269\u30FB\u968E\u30FB\u5BA4\u5185\u6A5F\uFF0F\u5BA4\u5916\u6A5F\uFF09")), /*#__PURE__*/React.createElement("button", {
     onClick: () => setShowStats(false),
     style: {
       background: "rgba(255,255,255,0.2)",
@@ -6417,7 +6556,7 @@ function ACInspectionApp() {
       alignItems: "center",
       justifyContent: "center"
     }
-  }, "✕")), /*#__PURE__*/React.createElement("div", {
+  }, "\u2715")), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "16px 20px",
       display: "flex",
@@ -6453,7 +6592,7 @@ function ACInspectionApp() {
         fontSize: 14,
         color: C.navy
       }
-    }, "合計"), /*#__PURE__*/React.createElement("div", {
+    }, "\u5408\u8A08"), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         gap: 16,
@@ -6464,19 +6603,19 @@ function ACInspectionApp() {
         fontSize: 13,
         color: C.g500
       }
-    }, total, "台"), /*#__PURE__*/React.createElement("span", {
+    }, total, "\u53F0"), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 15,
         fontWeight: 800,
         color: C.green
       }
-    }, totalDone, "✓"), total - totalDone > 0 && /*#__PURE__*/React.createElement("span", {
+    }, totalDone, "\u2713"), total - totalDone > 0 && /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 13,
         fontWeight: 700,
         color: C.red
       }
-    }, "未", total - totalDone), /*#__PURE__*/React.createElement("div", {
+    }, "\u672A", total - totalDone), /*#__PURE__*/React.createElement("div", {
       style: {
         width: 80,
         height: 8,
@@ -6506,7 +6645,7 @@ function ACInspectionApp() {
         color: C.g600,
         paddingLeft: 2
       }
-    }, /*#__PURE__*/React.createElement("span", null, "🏠 室内機：", indoorDone, "/", indoorTotal), /*#__PURE__*/React.createElement("span", null, "🏭 室外機：", outdoorDone, "/", outdoorTotal))), groupStats.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", null, "\uD83C\uDFE0 \u5BA4\u5185\u6A5F\uFF1A", indoorDone, "/", indoorTotal), /*#__PURE__*/React.createElement("span", null, "\uD83C\uDFED \u5BA4\u5916\u6A5F\uFF1A", outdoorDone, "/", outdoorTotal))), groupStats.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         overflowX: "auto"
       }
@@ -6525,7 +6664,7 @@ function ACInspectionApp() {
         color: C.g500,
         borderBottom: "2px solid " + C.g200
       }
-    }, "建物"), /*#__PURE__*/React.createElement("th", {
+    }, "\u5EFA\u7269"), /*#__PURE__*/React.createElement("th", {
       style: {
         textAlign: "left",
         padding: "6px 8px",
@@ -6534,7 +6673,7 @@ function ACInspectionApp() {
         color: C.g500,
         borderBottom: "2px solid " + C.g200
       }
-    }, "階"), /*#__PURE__*/React.createElement("th", {
+    }, "\u968E"), /*#__PURE__*/React.createElement("th", {
       style: {
         textAlign: "center",
         padding: "6px 8px",
@@ -6543,7 +6682,7 @@ function ACInspectionApp() {
         color: C.blue,
         borderBottom: "2px solid " + C.g200
       }
-    }, "🏠 室内機"), /*#__PURE__*/React.createElement("th", {
+    }, "\uD83C\uDFE0 \u5BA4\u5185\u6A5F"), /*#__PURE__*/React.createElement("th", {
       style: {
         textAlign: "center",
         padding: "6px 8px",
@@ -6552,7 +6691,7 @@ function ACInspectionApp() {
         color: C.teal,
         borderBottom: "2px solid " + C.g200
       }
-    }, "🏭 室外機"))), /*#__PURE__*/React.createElement("tbody", null, groupStats.map((g, i) => /*#__PURE__*/React.createElement("tr", {
+    }, "\uD83C\uDFED \u5BA4\u5916\u6A5F"))), /*#__PURE__*/React.createElement("tbody", null, groupStats.map((g, i) => /*#__PURE__*/React.createElement("tr", {
       key: i,
       onClick: () => {
         setFloorFilter(g.floor === "—" ? null : g.floor);
@@ -6593,7 +6732,7 @@ function ACInspectionApp() {
       style: {
         color: C.g300
       }
-    }, "—")), /*#__PURE__*/React.createElement("td", {
+    }, "\u2014")), /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "7px 8px",
         borderBottom: "1px solid " + C.g100,
@@ -6608,14 +6747,14 @@ function ACInspectionApp() {
       style: {
         color: C.g300
       }
-    }, "—"))))))), groupStats.length === 0 && /*#__PURE__*/React.createElement("div", {
+    }, "\u2014"))))))), groupStats.length === 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         textAlign: "center",
         padding: "24px 0",
         color: C.g400,
         fontSize: 13
       }
-    }, "データがありません"));
+    }, "\u30C7\u30FC\u30BF\u304C\u3042\u308A\u307E\u305B\u3093"));
   })()))), showExportConfirm && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
@@ -6649,7 +6788,7 @@ function ACInspectionApp() {
       fontWeight: 800,
       color: C.white
     }
-  }, "⚠️ 絞り込みが選択されています")), /*#__PURE__*/React.createElement("div", {
+  }, "\u26A0\uFE0F \u7D5E\u308A\u8FBC\u307F\u304C\u9078\u629E\u3055\u308C\u3066\u3044\u307E\u3059")), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "16px 18px"
     }
@@ -6660,7 +6799,7 @@ function ACInspectionApp() {
       marginBottom: 10,
       lineHeight: 1.6
     }
-  }, "データ一覧で以下の絞り込み・並び替えが選択された状態です。", /*#__PURE__*/React.createElement("br", null), "この内容のままCSV出力してよろしいですか？"), /*#__PURE__*/React.createElement("div", {
+  }, "\u30C7\u30FC\u30BF\u4E00\u89A7\u3067\u4EE5\u4E0B\u306E\u7D5E\u308A\u8FBC\u307F\u30FB\u4E26\u3073\u66FF\u3048\u304C\u9078\u629E\u3055\u308C\u305F\u72B6\u614B\u3067\u3059\u3002", /*#__PURE__*/React.createElement("br", null), "\u3053\u306E\u5185\u5BB9\u306E\u307E\u307ECSV\u51FA\u529B\u3057\u3066\u3088\u308D\u3057\u3044\u3067\u3059\u304B\uFF1F"), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.g50,
       borderRadius: 10,
@@ -6677,7 +6816,7 @@ function ACInspectionApp() {
       fontWeight: 700,
       color: C.navy
     }
-  }, "・", desc))), /*#__PURE__*/React.createElement("div", {
+  }, "\u30FB", desc))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8
@@ -6695,7 +6834,7 @@ function ACInspectionApp() {
       fontSize: 13,
       cursor: "pointer"
     }
-  }, "いいえ"), /*#__PURE__*/React.createElement("button", {
+  }, "\u3044\u3044\u3048"), /*#__PURE__*/React.createElement("button", {
     onClick: () => {
       exportListAsCSV();
       setShowExportConfirm(null);
@@ -6711,7 +6850,7 @@ function ACInspectionApp() {
       fontSize: 13,
       cursor: "pointer"
     }
-  }, "はい・出力する"))))), flash && /*#__PURE__*/React.createElement("div", {
+  }, "\u306F\u3044\u30FB\u51FA\u529B\u3059\u308B"))))), flash && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       bottom: 24,
@@ -6766,13 +6905,13 @@ function ACInspectionApp() {
     style: {
       fontSize: 24
     }
-  }, "✅"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, "\u2705"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 16,
       fontWeight: 800,
       color: C.white
     }
-  }, "保存しました"), /*#__PURE__*/React.createElement("div", {
+  }, "\u4FDD\u5B58\u3057\u307E\u3057\u305F"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: "rgba(255,255,255,0.8)",
@@ -6794,7 +6933,7 @@ function ACInspectionApp() {
       alignItems: "center",
       justifyContent: "center"
     }
-  }, "✕")), /*#__PURE__*/React.createElement("div", {
+  }, "\u2715")), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "14px 18px",
       display: "flex",
@@ -6825,13 +6964,13 @@ function ACInspectionApp() {
       fontWeight: 700,
       color: C.g500
     }
-  }, "📊 測定データ"), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCCA \u6E2C\u5B9A\u30C7\u30FC\u30BF"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
       color: C.blue,
       fontWeight: 700
     }
-  }, "タップで拡大 ▶")), /*#__PURE__*/React.createElement("div", {
+  }, "\u30BF\u30C3\u30D7\u3067\u62E1\u5927 \u25B6")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(auto-fill,minmax(170px,1fr))",
@@ -6883,7 +7022,7 @@ function ACInspectionApp() {
         fontSize: 9,
         color: C.red
       }
-    }, " ⚠️")));
+    }, " \u26A0\uFE0F")));
   })), saveModal.remarks && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
@@ -6892,7 +7031,7 @@ function ACInspectionApp() {
       borderTop: "1px solid " + C.g200,
       paddingTop: 6
     }
-  }, "備考: ", saveModal.remarks)), (() => {
+  }, "\u5099\u8003: ", saveModal.remarks)), (() => {
     const chkGroup = inspectionMode === "outdoor" ? "check_out" : "check_in";
     const chkList = checkFields.filter(f => f.group === chkGroup);
     if (chkList.length === 0) return null;
@@ -6910,7 +7049,7 @@ function ACInspectionApp() {
         color: C.g500,
         marginBottom: 8
       }
-    }, "✅ 点検チェック項目"), /*#__PURE__*/React.createElement("div", {
+    }, "\u2705 \u70B9\u691C\u30C1\u30A7\u30C3\u30AF\u9805\u76EE"), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         flexDirection: "column",
@@ -6967,7 +7106,7 @@ function ACInspectionApp() {
       color: "#92400E",
       marginBottom: 10
     }
-  }, "⚠️ リモコンを点検前の状態に戻してください"), /*#__PURE__*/React.createElement("div", {
+  }, "\u26A0\uFE0F \u30EA\u30E2\u30B3\u30F3\u3092\u70B9\u691C\u524D\u306E\u72B6\u614B\u306B\u623B\u3057\u3066\u304F\u3060\u3055\u3044"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -7029,7 +7168,7 @@ function ACInspectionApp() {
       fontSize: 16,
       boxShadow: "0 3px 10px rgba(5,150,105,0.3)"
     }
-  }, "✅ 戻しました\u3000→\u3000", nextLabel)) : /*#__PURE__*/React.createElement("button", {
+  }, "\u2705 \u623B\u3057\u307E\u3057\u305F\u3000\u2192\u3000", nextLabel)) : /*#__PURE__*/React.createElement("button", {
     onClick: closeNext,
     style: {
       width: "100%",
@@ -7043,7 +7182,7 @@ function ACInspectionApp() {
       fontSize: 16,
       boxShadow: "0 3px 10px rgba(37,99,176,0.3)"
     }
-  }, "✅ ", nextLabel)))), measZoom && saveModal && /*#__PURE__*/React.createElement("div", {
+  }, "\u2705 ", nextLabel)))), measZoom && saveModal && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
@@ -7083,7 +7222,7 @@ function ACInspectionApp() {
       fontWeight: 800,
       color: C.white
     }
-  }, "📊 測定データ\u3000", saveModal.floor, " ", saveModal.room), /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDCCA \u6E2C\u5B9A\u30C7\u30FC\u30BF\u3000", saveModal.floor, " ", saveModal.room), /*#__PURE__*/React.createElement("button", {
     onClick: () => setMeasZoom(false),
     style: {
       background: "rgba(255,255,255,0.2)",
@@ -7099,7 +7238,7 @@ function ACInspectionApp() {
       alignItems: "center",
       justifyContent: "center"
     }
-  }, "✕")), /*#__PURE__*/React.createElement("div", {
+  }, "\u2715")), /*#__PURE__*/React.createElement("div", {
     style: {
       overflowY: "auto",
       scrollbarGutter: "stable",
@@ -7158,7 +7297,7 @@ function ACInspectionApp() {
       fontSize: 13,
       color: C.g600
     }
-  }, "備考: ", saveModal.remarks)))));
+  }, "\u5099\u8003: ", saveModal.remarks)))));
 }
 
 // ─── 実機表示用ルート（iPad / Edge 等、実際のブラウザ画面いっぱいに表示） ─────────────────────────────────
