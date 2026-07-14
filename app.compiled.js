@@ -1547,8 +1547,9 @@ function SessionView({
   const [selectedType, setSelectedType] = useState(() => sessionInfo?.selectedType || allCategories.find(c => /室内機/.test(c)) || null);
   // 「室内機」が選択されている場合のみ点検エリア確認を表示（分類列が無い場合は従来通り常時表示）
   const showAccessCheck = !hasCategoryPanel || !!selectedType && /室内機/.test(selectedType);
-  // 点検エリア確認のスキップ（ONにすると部屋一覧を非表示にする）
-  const [skipAccessCheck, setSkipAccessCheck] = useState(!!sessionInfo?.skipAccessCheck);
+  // 入室可否チェックは必須ではなく選択制：「入室可否チェックをする」を押すまでは一覧を表示しない
+  const [accessCheckStarted, setAccessCheckStarted] = useState(!!sessionInfo && !sessionInfo?.skipAccessCheck);
+  const skipAccessCheck = !accessCheckStarted;
   const isOutdoorSelected = !!selectedType && /室外機/.test(selectedType);
   // 点検エリア確認の機器リストは「室内機」のみを対象にする（分類列が無い場合は従来通り全件）
   const getCategory = d => categoryKey && d._raw ? String(d._raw[categoryKey] || "").trim() : "";
@@ -1609,6 +1610,27 @@ function SessionView({
     return !records.some(r => r.managementNo === d.managementNo && r.unitNo === d.unitNo && Object.values(r.values).some(v => v !== ""));
   }).length;
   const canStart = !!date && !!inspector && (visibleFloors.length === 0 || targetFloors.length > 0);
+  const startInspection = skip => {
+    if (!canStart) return;
+    const combinedInspector = inspector2 ? inspector + "・" + inspector2 : inspector;
+    const info = {
+      date,
+      inspector: combinedInspector,
+      targetFloors,
+      roomAccess: access,
+      selectedBuildings,
+      selectedType,
+      skipAccessCheck: skip
+    };
+    try {
+      localStorage.setItem("acSessionInfo", JSON.stringify(info));
+    } catch (e) {}
+    if (isOutdoorSelected) {
+      onSelectOutdoor(info);
+    } else {
+      onStart(info);
+    }
+  };
   return /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
@@ -2009,30 +2031,39 @@ function SessionView({
       color: C.navy,
       flex: 1
     }
-  }, "\uD83D\uDEAA \u5165\u5BA4\u53EF\u5426\u30C1\u30A7\u30C3\u30AF"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setSkipAccessCheck(p => !p),
+  }, "\uD83D\uDEAA \u5165\u5BA4\u53EF\u5426\u30C1\u30A7\u30C3\u30AF")), !accessCheckStarted ? /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: "5px 10px",
-      borderRadius: 7,
-      border: "1.5px solid " + (skipAccessCheck ? C.teal : C.g200),
-      background: skipAccessCheck ? C.teal : C.white,
-      color: skipAccessCheck ? C.white : C.g500,
-      fontSize: 11,
-      fontWeight: 700,
-      cursor: "pointer",
-      whiteSpace: "nowrap"
+      display: "flex",
+      gap: 8
     }
-  }, "\u23ED\uFE0F \u30B9\u30AD\u30C3\u30D7", skipAccessCheck ? " ✓" : "")), skipAccessCheck ? /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setAccessCheckStarted(true),
     style: {
-      padding: "8px 10px",
-      background: C.teal + "10",
-      border: "1.5px solid " + C.teal + "40",
-      borderRadius: 8,
-      fontSize: 11,
-      color: C.teal,
-      fontWeight: 700
+      flex: 1,
+      padding: "12px",
+      borderRadius: 9,
+      border: "2px solid " + C.blue,
+      background: C.blue + "0F",
+      color: C.blue,
+      fontWeight: 800,
+      fontSize: 13,
+      cursor: "pointer"
     }
-  }, "\u23ED\uFE0F \u5165\u5BA4\u53EF\u5426\u30C1\u30A7\u30C3\u30AF\u3092\u30B9\u30AD\u30C3\u30D7\u3057\u307E\u3057\u305F\uFF08\u90E8\u5C4B\u4E00\u89A7\u306F\u8868\u793A\u3055\u308C\u307E\u305B\u3093\uFF09") : /*#__PURE__*/React.createElement(React.Fragment, null, ngCount > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDEAA \u5165\u5BA4\u53EF\u5426\u30C1\u30A7\u30C3\u30AF\u3092\u3059\u308B"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => startInspection(true),
+    disabled: !canStart,
+    style: {
+      flex: 1,
+      padding: "12px",
+      borderRadius: 9,
+      border: "2px solid " + C.g300,
+      background: canStart ? C.g50 : C.g100,
+      color: canStart ? C.g600 : C.g400,
+      fontWeight: 800,
+      fontSize: 13,
+      cursor: canStart ? "pointer" : "not-allowed"
+    }
+  }, "\u25B6\uFE0F \u3053\u306E\u307E\u307E\u70B9\u691C\u3059\u308B")) : /*#__PURE__*/React.createElement(React.Fragment, null, ngCount > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 6,
       padding: "5px 10px",
@@ -2262,26 +2293,7 @@ function SessionView({
     })));
   })))), /*#__PURE__*/React.createElement("button", {
     disabled: !canStart,
-    onClick: () => {
-      const combinedInspector = inspector2 ? inspector + "・" + inspector2 : inspector;
-      const info = {
-        date,
-        inspector: combinedInspector,
-        targetFloors,
-        roomAccess: access,
-        selectedBuildings,
-        selectedType,
-        skipAccessCheck
-      };
-      try {
-        localStorage.setItem("acSessionInfo", JSON.stringify(info));
-      } catch (e) {}
-      if (isOutdoorSelected) {
-        onSelectOutdoor(info);
-      } else {
-        onStart(info);
-      }
-    },
+    onClick: () => startInspection(skipAccessCheck),
     style: {
       padding: "13px",
       borderRadius: 12,
@@ -2760,6 +2772,8 @@ function Step1View({
       setDevSearch(e.target.value);
     },
     onFocus: () => setS1Focus("devSearch"),
+    readOnly: IS_IPAD,
+    inputMode: IS_IPAD ? "none" : undefined,
     placeholder: "\u7BA1\u7406\u756A\u53F7\u30FB\u90E8\u5C4B\u540D\u3067\u691C\u7D22\u2026",
     style: {
       width: "100%",
@@ -2953,15 +2967,24 @@ function Step1View({
     });
     const filtered = sorted.filter(d => {
       const n = s => s.replace(/-/g, "").toLowerCase();
+      const digitsOnly = s => s.replace(/[^0-9]/g, "");
       if (devSearch) {
-        const q = n(devSearch);
-        // devVisibleColsの全列＋基本4フィールドでヒット判定
+        const qRaw = devSearch.trim();
+        const isNumericQuery = /^[0-9]+$/.test(qRaw);
+        const q = n(qRaw);
+        const qDigits = digitsOnly(qRaw);
+        // 数字だけの検索語のときは、英字・記号を無視して数字だけで比較する
+        // （例："AC-10A-19"→"1019"、"02-01"（リモコン番号）→"0201" のどちらでも見つかる）
+        const matches = v => {
+          const s = String(v || "");
+          return isNumericQuery ? digitsOnly(s).includes(qDigits) : n(s).includes(q);
+        };
+        // devVisibleColsの全列＋基本4フィールド＋リモコン番号列（非表示でも検索対象に含める）でヒット判定
         const cols = devVisibleCols && devVisibleCols.length > 0 ? devVisibleCols : [];
-        const rawHit = cols.some(col => {
-          const v = d._raw ? d._raw[col] : "";
-          return n(String(v)).includes(q);
-        });
-        const basicHit = n(d.managementNo).includes(q) || n(d.unitNo).includes(q) || n(d.room).includes(q) || n(d.floor).includes(q);
+        const remoteKey = devColumns.find(k => /リモコン|remote/i.test(k));
+        const searchCols = remoteKey && !cols.includes(remoteKey) ? [...cols, remoteKey] : cols;
+        const rawHit = searchCols.some(col => matches(d._raw ? d._raw[col] : ""));
+        const basicHit = matches(d.managementNo) || matches(d.unitNo) || matches(d.room) || matches(d.floor);
         if (!rawHit && !basicHit) return false;
       }
       if (undoneOnly) {
