@@ -48,74 +48,53 @@ const INDOOR_FIELDS = [{
   step: 0.1,
   group: "indoor"
 }];
+// 「エアコン定期点検.xls」の室外機シート「運転調整・データ採取」欄と同じ6項目・同じ順序（v9.28）
 const OUTDOOR_FIELDS = [{
-  code: "E1",
+  code: "od1",
+  label: "圧縮機電流",
+  unit: "A",
+  step: 0.1,
+  group: "outdoor"
+}, {
+  code: "od2",
+  label: "吐出ガス圧力",
+  unit: "MPa",
+  step: 0.01,
+  group: "outdoor"
+}, {
+  code: "od3",
   label: "吐出ガス温度",
   unit: "°C",
   step: 0.1,
   group: "outdoor"
 }, {
-  code: "E2",
+  code: "od4",
+  label: "吸入ガス圧力",
+  unit: "MPa",
+  step: 0.01,
+  group: "outdoor"
+}, {
+  code: "od5",
   label: "吸入ガス温度",
   unit: "°C",
   step: 0.1,
   group: "outdoor"
 }, {
-  code: "E3",
-  label: "室外熱交・蒸発",
+  code: "od6",
+  label: "冷媒液温度",
   unit: "°C",
   step: 0.1,
-  group: "outdoor"
-}, {
-  code: "E4",
-  label: "圧縮機頂部",
-  unit: "°C",
-  step: 0.1,
-  group: "outdoor"
-}, {
-  code: "F1",
-  label: "外気温度",
-  unit: "°C",
-  step: 0.1,
-  group: "outdoor"
-}, {
-  code: "F2",
-  label: "過冷却液温度",
-  unit: "°C",
-  step: 0.1,
-  group: "outdoor"
-}, {
-  code: "F3",
-  label: "室外熱交・出口",
-  unit: "°C",
-  step: 0.1,
-  group: "outdoor"
-}, {
-  code: "H1",
-  label: "高圧圧力",
-  unit: "MPa",
-  step: 0.01,
-  group: "outdoor"
-}, {
-  code: "H2",
-  label: "低圧圧力",
-  unit: "MPa",
-  step: 0.01,
-  group: "outdoor"
-}, {
-  code: "H3",
-  label: "運転電流",
-  unit: "A",
-  step: 0.1,
-  group: "outdoor"
-}, {
-  code: "H4",
-  label: "運転周波数",
-  unit: "Hz",
-  step: 1,
   group: "outdoor"
 }];
 const ALL_FIELDS = [...INDOOR_FIELDS, ...OUTDOOR_FIELDS];
+// 正常値範囲設定画面：テンキーで最小→最大→次の項目…と連続入力するための順序（点検データ入力画面のfocusSeqと同じ考え方）
+const LIM_SEQ = ALL_FIELDS.flatMap(f => [{
+  code: f.code,
+  part: "min"
+}, {
+  code: f.code,
+  part: "max"
+}]);
 const defVis = () => {
   const v = {};
   ALL_FIELDS.forEach(f => v[f.code] = true);
@@ -188,6 +167,24 @@ function findColKey(keys, ...candidates) {
     if (found) return found;
   }
   return null;
+}
+// _raw（列名→値）から floor/room/managementNo/unitNo を再計算する（parseDevRowsと同じ列検出ロジック）。
+// 設定画面での機器の個別編集・新規追加で、_rawを直接編集した後にこの4項目を同期するために使う。
+function deriveDevCore(raw, keys) {
+  const fk = findColKey(keys, "階", "floor", "フロア", "エリア", "area");
+  const rk = findColKey(keys, "部屋名", "room", "部屋", "室名");
+  const mk = findColKey(keys, "管理番号", "managementno", "管理No", "管理no", "管理");
+  const uk = findColKey(keys, "機器番号", "unitno", "機器No", "機器no", "機器", "unit");
+  const fk2 = fk || keys[0] || null,
+    rk2 = rk || keys[1] || null;
+  const mk2 = mk || keys[2] || null,
+    uk2 = uk || keys[3] || null;
+  return {
+    floor: String(fk2 && raw[fk2] || "").trim(),
+    room: String(rk2 && raw[rk2] || "").trim(),
+    managementNo: String(mk2 && raw[mk2] || "").trim(),
+    unitNo: String(uk2 && raw[uk2] || "").trim()
+  };
 }
 // JSON行配列（xlsxのsheet_to_json結果）をdevListに変換
 function parseDevRows(rows, origKeys) {
@@ -271,8 +268,14 @@ const LS_KEYS = {
   inspList: "acInspList",
   checkFields: "acCheckFields",
   limits: "acLimits",
-  vis: "acVis"
+  vis: "acVis",
+  cardLabels: "acCardLabels"
 };
+const defCardLabels = () => ({
+  device: "機器リスト",
+  inspector: "点検者リスト",
+  criteria: "点検基準設定"
+});
 
 // ─── Firebase（複数端末間のリアルタイム共有）───
 // 使い方：Firebaseコンソール（console.firebase.google.com）でプロジェクトを作成し、
@@ -1103,7 +1106,9 @@ function Step2View({
   isCheckCode,
   setCheckAndAdvance,
   hideHeader,
-  hideNumpad
+  hideNumpad,
+  outdoorLocked,
+  requestUnlockOutdoor
 }) {
   const isOutdoor = inspectionMode === "outdoor";
   const chkFields = checkFields || [];
@@ -1330,7 +1335,22 @@ function Step2View({
       color: C.teal,
       borderBottom: "1px solid " + C.teal + "20"
     }
-  }, "\u5BA4\u5916\u6A5F\uFF08\u30A2\u30A6\u30C8\u30C9\u30A2\uFF09")), visOut.map((f, i) => {
+  }, "\u5BA4\u5916\u6A5F\uFF08\u30A2\u30A6\u30C8\u30C9\u30A2\uFF09")), outdoorLocked ? /*#__PURE__*/React.createElement("tr", {
+    onClick: () => requestUnlockOutdoor && requestUnlockOutdoor(),
+    style: {
+      cursor: "pointer",
+      background: "#FFF7ED"
+    }
+  }, /*#__PURE__*/React.createElement("td", {
+    colSpan: 5,
+    style: {
+      padding: "14px 10px",
+      textAlign: "center",
+      fontSize: 13,
+      fontWeight: 700,
+      color: "#92400E"
+    }
+  }, "\uD83D\uDD12 \u5BA4\u5916\u6A5F\u30C7\u30FC\u30BF\u306F\u5165\u529B\u6E08\u307F\u3067\u3059\u3002\u30BF\u30C3\u30D7\u3057\u3066\u5165\u529B\u3059\u308B")) : visOut.map((f, i) => {
     const act = activeCode === f.code;
     const v = act ? numDisp : form.values[f.code];
     return /*#__PURE__*/React.createElement(FieldRow, {
@@ -1533,9 +1553,11 @@ function SessionView({
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = useState(sessionInfo?.date || today);
-  const [inspector, setInspector] = useState(sessionInfo?.inspector || "");
+  // sessionInfo.inspectorは複数人が「・」で結合済みの表示用文字列なので、この画面自身の再表示にはinspector1〜4（生の個別値）を使う
+  const [inspector, setInspector] = useState(sessionInfo?.inspector1 || "");
   const [inspector2, setInspector2] = useState(sessionInfo?.inspector2 || "");
-  const [showInspector2, setShowInspector2] = useState(!!sessionInfo?.inspector2);
+  const [inspector3, setInspector3] = useState(sessionInfo?.inspector3 || "");
+  const [inspector4, setInspector4] = useState(sessionInfo?.inspector4 || "");
   const [access, setAccess] = useState(sessionInfo?.roomAccess || {});
   const [memoOpen, setMemoOpen] = useState({});
   const [floorSortAsc, setFloorSortAsc] = useState(false); // デフォルト降順（10F→1F）
@@ -1612,10 +1634,16 @@ function SessionView({
   const canStart = !!date && !!inspector && (visibleFloors.length === 0 || targetFloors.length > 0);
   const startInspection = skip => {
     if (!canStart) return;
-    const combinedInspector = inspector2 ? inspector + "・" + inspector2 : inspector;
+    const combinedInspector = [inspector, inspector2, inspector3, inspector4].filter(Boolean).join("・");
+    // inspector1〜4は生の個別値（SessionView再表示時にこの画面自身の状態を正しく復元するため）。
+    // inspectorは結合済みの表示用文字列（点検記録side等、他の箇所が期待する形）としてそのまま残す。
     const info = {
       date,
       inspector: combinedInspector,
+      inspector1: inspector,
+      inspector2,
+      inspector3,
+      inspector4,
       targetFloors,
       roomAccess: access,
       selectedBuildings,
@@ -1751,7 +1779,41 @@ function SessionView({
       outline: "none",
       background: C.g50
     }
-  }), showInspector2 ? /*#__PURE__*/React.createElement("div", {
+  }), [{
+    label: "二人目",
+    val: inspector2,
+    set: v => {
+      setInspector2(v);
+      if (!v) {
+        setInspector3("");
+        setInspector4("");
+      }
+    },
+    exclude: [inspector],
+    disabled: !inspector
+  }, ...(inspector2 ? [{
+    label: "三人目",
+    val: inspector3,
+    set: v => {
+      setInspector3(v);
+      if (!v) setInspector4("");
+    },
+    exclude: [inspector, inspector2],
+    disabled: false
+  }] : []), ...(inspector2 && inspector3 ? [{
+    label: "四人目",
+    val: inspector4,
+    set: setInspector4,
+    exclude: [inspector, inspector2, inspector3],
+    disabled: false
+  }] : [])].map(({
+    label,
+    val,
+    set,
+    exclude,
+    disabled
+  }) => /*#__PURE__*/React.createElement("div", {
+    key: label,
     style: {
       marginTop: 8,
       display: "flex",
@@ -1759,47 +1821,50 @@ function SessionView({
       alignItems: "center"
     }
   }, inspList.length > 0 ? /*#__PURE__*/React.createElement("select", {
-    value: inspector2,
-    onChange: e => setInspector2(e.target.value),
+    value: val,
+    onChange: e => set(e.target.value),
+    disabled: disabled,
     style: {
       flex: 1,
+      minWidth: 0,
       boxSizing: "border-box",
       fontSize: 14,
       fontWeight: 700,
       padding: "7px 10px",
-      border: "2px solid " + (inspector2 ? C.blue : C.g200),
+      border: "2px solid " + (val ? C.blue : C.g200),
       borderRadius: 8,
       outline: "none",
-      color: inspector2 ? C.g800 : C.g400,
-      background: C.g50,
+      color: val ? C.g800 : C.g400,
+      background: disabled ? C.g100 : C.g50,
       appearance: "auto",
-      cursor: "pointer"
+      cursor: disabled ? "not-allowed" : "pointer",
+      opacity: disabled ? 0.55 : 1
     }
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "\u2014 \u4E8C\u4EBA\u76EE\u306E\u70B9\u691C\u8005\u3092\u9078\u629E \u2014"), inspList.filter(n => n !== inspector).map(name => /*#__PURE__*/React.createElement("option", {
+  }, "\u2014 ", label, "\u306E\u70B9\u691C\u8005\u3092\u9078\u629E \u2014"), inspList.filter(n => !exclude.includes(n)).map(name => /*#__PURE__*/React.createElement("option", {
     key: name,
     value: name
   }, name))) : /*#__PURE__*/React.createElement("input", {
     type: "text",
-    value: inspector2,
-    onChange: e => setInspector2(e.target.value),
-    placeholder: "\u4E8C\u4EBA\u76EE\u306E\u70B9\u691C\u8005\u540D\u3092\u5165\u529B",
+    value: val,
+    onChange: e => set(e.target.value),
+    disabled: disabled,
+    placeholder: label + "の点検者名を入力",
     style: {
       flex: 1,
+      minWidth: 0,
       boxSizing: "border-box",
       fontSize: 13,
       padding: "7px 10px",
-      border: "2px solid " + (inspector2 ? C.blue : C.g200),
+      border: "2px solid " + (val ? C.blue : C.g200),
       borderRadius: 8,
       outline: "none",
-      background: C.g50
+      background: disabled ? C.g100 : C.g50,
+      opacity: disabled ? 0.55 : 1
     }
   }), /*#__PURE__*/React.createElement("button", {
-    onClick: () => {
-      setInspector2("");
-      setShowInspector2(false);
-    },
+    onClick: () => set(""),
     style: {
       padding: "7px 10px",
       borderRadius: 8,
@@ -1808,22 +1873,10 @@ function SessionView({
       color: C.g500,
       cursor: "pointer",
       fontSize: 12,
-      fontWeight: 700
+      fontWeight: 700,
+      flexShrink: 0
     }
-  }, "\u2715")) : /*#__PURE__*/React.createElement("button", {
-    onClick: () => setShowInspector2(true),
-    style: {
-      marginTop: 8,
-      padding: "6px 12px",
-      borderRadius: 8,
-      border: "1.5px dashed " + C.g300,
-      background: "none",
-      color: C.blue,
-      cursor: "pointer",
-      fontSize: 12,
-      fontWeight: 700
-    }
-  }, "\uFF0B \u4E8C\u4EBA\u76EE\u306E\u70B9\u691C\u8005\u3092\u8FFD\u52A0")), allFloors.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, "\u2715")))), allFloors.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#FFF7ED",
       borderRadius: 14,
@@ -2031,7 +2084,20 @@ function SessionView({
       color: C.navy,
       flex: 1
     }
-  }, "\uD83D\uDEAA \u5165\u5BA4\u53EF\u5426\u30C1\u30A7\u30C3\u30AF")), !accessCheckStarted ? /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDEAA \u5165\u5BA4\u53EF\u5426\u30C1\u30A7\u30C3\u30AF"), accessCheckStarted && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setAccessCheckStarted(false),
+    style: {
+      padding: "5px 10px",
+      borderRadius: 7,
+      border: "1.5px solid " + C.g200,
+      background: C.white,
+      color: C.g500,
+      fontSize: 11,
+      fontWeight: 700,
+      cursor: "pointer",
+      whiteSpace: "nowrap"
+    }
+  }, "\u2190 \u623B\u308B")), !accessCheckStarted ? /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8
@@ -2291,7 +2357,7 @@ function SessionView({
         }
       }, "\u9589\u3058\u308B")));
     })));
-  })))), /*#__PURE__*/React.createElement("button", {
+  })))), (!(targetRooms.length > 0 && showAccessCheck) || accessCheckStarted) && /*#__PURE__*/React.createElement("button", {
     disabled: !canStart,
     onClick: () => startInspection(skipAccessCheck),
     style: {
@@ -2365,7 +2431,9 @@ function Step1View({
   focusSeq,
   isCheckCode,
   setCheckAndAdvance,
-  onSwitchMode
+  onSwitchMode,
+  outdoorLocked,
+  requestUnlockOutdoor
 }) {
   const allFloors = [...new Set(devList.map(d => d.floor).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, {
     numeric: true,
@@ -2396,6 +2464,12 @@ function Step1View({
   const categoryKey = devColumns.find(k => /^(分類|category|class)$/i.test(k.trim())) || null;
   const buildingKey = devColumns.find(k => /建物|building|棟|ビル/i.test(k)) || null;
   const remarksKey = devColumns.find(k => /^(備考|remarks?|memo|note)$/i.test(k.trim())) || null;
+  // 選択中の機器の備考。「リモコン無し」（サーミスタ計での実測が必要）は専用の注意文を、
+  // それ以外の備考（「撤去」「運転off禁止」等）はそのままコメントとして表示する。点検前状態欄・データ入力欄の両方で使う
+  const selDevForRemote = devList.find(d => d.managementNo === form.managementNo && d.unitNo === form.unitNo);
+  const remarksValForRemote = remarksKey ? String(selDevForRemote?._raw?.[remarksKey] || "").trim() : "";
+  const noRemote = /リモコン\s*無し/.test(remarksValForRemote);
+  const otherRemark = remarksValForRemote && !noRemote ? remarksValForRemote : "";
   const selectedBuildings = sessionInfo?.selectedBuildings || [];
   const categoryPattern = inspectionMode === "outdoor" ? /室外機/ : /室内機/;
   const baseDevList = devList.filter(d => {
@@ -2477,11 +2551,12 @@ function Step1View({
   // 建物・階などの絞り込みで候補が1件だけになっている場合は、タップしなくても自動的に選択する
   // （画面を開き直すたびに同じ機器を選び直す手間を無くすため）
   useEffect(() => {
-    if (!s1DevDone && !devSearch && s1InspDone && baseDevList.length === 1) {
+    // summaryExpandedがtrue＝「修正」等でユーザーが自分から機器選択に戻った直後なので、勝手に選び直さない
+    if (!summaryExpanded && !s1DevDone && !devSearch && s1InspDone && baseDevList.length === 1) {
       selectDevice(baseDevList[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseDevList.length, s1DevDone, devSearch, s1InspDone]);
+  }, [baseDevList.length, s1DevDone, devSearch, s1InspDone, summaryExpanded]);
   // チェックの値を設定し、続けて次のチェック項目へフォーカスを進める（テンキーパネル・一覧の○×ボタン共通）
   // ※反転（同じ値を押すとクリア）はしない。何度押しても選んだ値のまま（クリアはCLRボタンで行う）
   const advanceCheck = (code, v) => {
@@ -2934,7 +3009,7 @@ function Step1View({
       gap: 3,
       overflowY: "auto",
       scrollbarGutter: "stable",
-      maxHeight: 420,
+      maxHeight: "calc(100vh - 340px)",
       minHeight: 80,
       flexShrink: 0
     }
@@ -3450,7 +3525,7 @@ function Step1View({
       fontWeight: 700,
       whiteSpace: "nowrap"
     }
-  }, "\u4FEE\u6B63"))));
+  }, "\u6A5F\u5668\u9078\u629E"))));
   const seqIndoor = focusSeq || [];
   const aiIndoor = seqIndoor.findIndex(f => f.code === activeCode);
   const activeIsCheckIndoor = !!activeCode && !!isCheckCode && isCheckCode(activeCode);
@@ -3616,11 +3691,40 @@ function Step1View({
     }, "\uD83D\uDCCB \u4E00\u6B21\u4FDD\u5B58\u6E08\u307F\uFF1A\u524D\u56DE\u306E\u70B9\u691C\u524D\u72B6\u614B\u300C", prevSummary, "\u300D");
   })(), /*#__PURE__*/React.createElement("div", {
     style: {
+      position: "relative",
       display: "flex",
       background: C.g200,
       gap: "1px"
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    onMouseDown: e => e.preventDefault(),
+    onClick: () => {
+      setSummaryExpanded(true);
+      setForm(p => ({
+        ...p,
+        floor: "",
+        room: "",
+        managementNo: "",
+        unitNo: ""
+      }));
+      setDevSearch("");
+    },
+    style: {
+      position: "absolute",
+      top: 6,
+      right: 6,
+      zIndex: 1,
+      padding: "4px 10px",
+      borderRadius: 7,
+      border: "1.5px solid " + C.g300,
+      background: C.white,
+      color: C.g600,
+      cursor: "pointer",
+      fontSize: 11,
+      fontWeight: 700,
+      whiteSpace: "nowrap"
+    }
+  }, "\u2190 \u623B\u308B"), /*#__PURE__*/React.createElement("div", {
     style: {
       width: 110,
       flexShrink: 0,
@@ -3786,7 +3890,29 @@ function Step1View({
     }
   }, "\uFF0D")))), (() => {
     const preStateSet = !!(form.preOperation || form.preMode || form.preWind || form.preSetTemp);
-    return /*#__PURE__*/React.createElement("button", {
+    return /*#__PURE__*/React.createElement(React.Fragment, null, noRemote && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 6,
+        padding: "8px 10px",
+        background: "#FFF7ED",
+        border: "1.5px solid #F59E0B",
+        borderRadius: 8,
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#92400E"
+      }
+    }, "\u26A0\uFE0F \u3053\u306E\u5BA4\u5185\u6A5F\u306F\u30EA\u30E2\u30B3\u30F3\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u30B5\u30FC\u30DF\u30B9\u30BF\u8A08\u3067\u5B9F\u6E2C\u5024\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002"), otherRemark && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 6,
+        padding: "8px 10px",
+        background: "#FFF7ED",
+        border: "1.5px solid #F59E0B",
+        borderRadius: 8,
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#92400E"
+      }
+    }, "\uD83D\uDCDD \u5099\u8003\uFF1A", otherRemark), /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         setPreStateConfirmedFor(deviceKey);
         if (focusSeq && focusSeq.length > 0) {
@@ -3807,7 +3933,7 @@ function Step1View({
         background: preStateSet ? "linear-gradient(135deg," + C.green + ",#047857)" : C.g200,
         color: preStateSet ? C.white : C.g600
       }
-    }, preStateSet ? "💾 一次保存" : "⏭️ スキップ");
+    }, preStateSet ? "💾 一次保存" : "⏭️ スキップ"));
   })()) :
   /*#__PURE__*/
   /* ── 折りたたみ済み：点検日等のバーと同じ書式（白背景＋✓アイコン）で1行表示（タップで再展開） ── */
@@ -3862,7 +3988,29 @@ function Step1View({
       fontWeight: 700,
       whiteSpace: "nowrap"
     }
-  }, "\u4FEE\u6B63"))) : null, inspectionMode === "indoor" && s1DevDone && !devSearch && /*#__PURE__*/React.createElement("div", {
+  }, "\u4FEE\u6B63"))) : null, inspectionMode === "indoor" && s1DevDone && !devSearch && !preStateOpen && noRemote && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6,
+      padding: "8px 10px",
+      background: "#FFF7ED",
+      border: "1.5px solid #F59E0B",
+      borderRadius: 8,
+      fontSize: 12,
+      fontWeight: 700,
+      color: "#92400E"
+    }
+  }, "\u26A0\uFE0F \u3053\u306E\u5BA4\u5185\u6A5F\u306F\u30EA\u30E2\u30B3\u30F3\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u30B5\u30FC\u30DF\u30B9\u30BF\u8A08\u3067\u5B9F\u6E2C\u5024\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002"), inspectionMode === "indoor" && s1DevDone && !devSearch && !preStateOpen && otherRemark && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6,
+      padding: "8px 10px",
+      background: "#FFF7ED",
+      border: "1.5px solid #F59E0B",
+      borderRadius: 8,
+      fontSize: 12,
+      fontWeight: 700,
+      color: "#92400E"
+    }
+  }, "\uD83D\uDCDD \u5099\u8003\uFF1A", otherRemark), inspectionMode === "indoor" && s1DevDone && !devSearch && /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       display: "flex",
@@ -3902,7 +4050,9 @@ function Step1View({
     inspectionMode: inspectionMode,
     focusSeq: focusSeq,
     isCheckCode: isCheckCode,
-    setCheckAndAdvance: setCheckAndAdvance
+    setCheckAndAdvance: setCheckAndAdvance,
+    outdoorLocked: outdoorLocked,
+    requestUnlockOutdoor: requestUnlockOutdoor
   })))), inspectionMode === "outdoor" && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 10,
@@ -4242,13 +4392,73 @@ function ACInspectionApp() {
   const setRecords = inspectionMode === "indoor" ? setIndoorRecords : setOutdoorRecords;
   const [editIdx, setEditIdx] = useState(null);
   const [flash, setFlash] = useState("");
+  const [outdoorUnlockedFor, setOutdoorUnlockedFor] = useState(null); // 「室外機データは入力済」確認後にロック解除した機器キー（managementNo|unitNo）
+
   const [limits, setLimits] = useState(() => lsGet(LS_KEYS.limits, defLim()));
   const [tmpLim, setTmpLim] = useState(defLim());
-  const [vis, setVis] = useState(() => lsGet(LS_KEYS.vis, defVis()));
+  // 正常値範囲設定：点検データ入力画面と同じ「テンキーで連続入力」操作用state
+  const [limActive, setLimActive] = useState(null); // {code,part:"min"|"max"} | null
+  const [limNumDisp, setLimNumDisp] = useState("");
+  const limOvr = useRef(true);
+  const limFocus = (code, part) => {
+    setLimActive({
+      code,
+      part
+    });
+    setLimNumDisp(tmpLim[code]?.[part] || "");
+    limOvr.current = true;
+  };
+  const limOnPress = key => {
+    setLimNumDisp(prev => {
+      if (limOvr.current) {
+        limOvr.current = false;
+        return key === "." ? "0." : String(key);
+      }
+      if (key === ".") {
+        if (prev.includes(".")) return prev;
+        return (prev || "0") + ".";
+      }
+      if (prev === "0") return String(key);
+      return prev + key;
+    });
+  };
+  const limMove = dir => {
+    if (!limActive) {
+      if (LIM_SEQ.length > 0) limFocus(LIM_SEQ[0].code, LIM_SEQ[0].part);
+      return;
+    }
+    if (limNumDisp !== "") setTmpLim(p => ({
+      ...p,
+      [limActive.code]: {
+        ...p[limActive.code],
+        [limActive.part]: limNumDisp
+      }
+    }));
+    const idx = LIM_SEQ.findIndex(s => s.code === limActive.code && s.part === limActive.part);
+    const next = LIM_SEQ[idx + dir];
+    if (next) {
+      limFocus(next.code, next.part);
+    } else {
+      setLimActive(null);
+      setLimNumDisp("");
+    }
+  };
+  const limIdx = limActive ? LIM_SEQ.findIndex(s => s.code === limActive.code && s.part === limActive.part) : -1;
+  // defVis()を先に展開してから保存済み設定を上書きすることで、既存の保存設定に無い新規フィールド（例：v9.28で追加したod1〜od6）は
+  // 常に表示ONをデフォルトにする（フィールド定義を後から追加・変更しても、既存ユーザーの保存済み設定に埋もれて非表示にならないようにする）
+  const [vis, setVis] = useState(() => ({
+    ...defVis(),
+    ...lsGet(LS_KEYS.vis, {})
+  }));
   const [tmpVis, setTmpVis] = useState(defVis());
+  const [cardLabels, setCardLabels] = useState(() => lsGet(LS_KEYS.cardLabels, defCardLabels())); // 設定画面カードの表記（機器リスト・点検者リスト・点検基準設定）
   const [devList, setDevList] = useState(() => lsGet(LS_KEYS.devList, [])); // [{floor,room,managementNo,unitNo,_raw:{}}]
   const [devColumns, setDevColumns] = useState(() => lsGet(LS_KEYS.devColumns, [])); // CSVの全列名
   const [devVisibleCols, setDevVisibleCols] = useState(() => lsGet(LS_KEYS.devVisibleCols, [])); // 表示する列名（空=全列）
+  // 設定画面：機器リストを検索して1件だけ編集・追加・削除するためのstate
+  const [devEditSearch, setDevEditSearch] = useState("");
+  const [devEditIdx, setDevEditIdx] = useState(null); // devListのindex／"new"／null（未選択）
+  const [devEditDraft, setDevEditDraft] = useState(null); // 編集中データ {_raw:{...}}
   const [inspList, setInspList] = useState(() => lsGet(LS_KEYS.inspList, []));
   const [checkFields, setCheckFields] = useState(() => lsGet(LS_KEYS.checkFields, [
   // 室内機チェック項目
@@ -4327,6 +4537,7 @@ function ACInspectionApp() {
     lim: false
   });
   const [modalSec, setModalSec] = useState(null); // 設定画面で開いているモーダルのid
+  const [criteriaTab, setCriteriaTab] = useState("checkitems"); // 点検基準設定モーダル内のタブ（"checkitems"|"lim"）
 
   const [numDisp, setNumDisp] = useState("");
   const isOvr = useRef(false);
@@ -4369,6 +4580,9 @@ function ACInspectionApp() {
   useEffect(() => {
     lsSet(LS_KEYS.vis, vis);
   }, [vis]);
+  useEffect(() => {
+    lsSet(LS_KEYS.cardLabels, cardLabels);
+  }, [cardLabels]);
 
   // ─── Firebase：設定データの購読（他端末での変更を即座に反映）───
   // Firebase側にまだデータが無い（初回セットアップ直後）場合は、ローカルの設定を初期データとして書き込む。
@@ -4384,7 +4598,12 @@ function ACInspectionApp() {
         if (d.inspList) setInspList(d.inspList);
         if (d.checkFields) setCheckFields(d.checkFields);
         if (d.limits) setLimits(d.limits);
-        if (d.vis) setVis(d.vis);
+        // defVis()を土台にFirebase側の保存値を上書きすることで、保存済み設定に無い新規フィールド（例：v9.28のod1〜od6）は表示ONのままにする
+        if (d.vis) setVis({
+          ...defVis(),
+          ...d.vis
+        });
+        if (d.cardLabels) setCardLabels(d.cardLabels);
       } else {
         ref.set({
           devList,
@@ -4393,7 +4612,8 @@ function ACInspectionApp() {
           inspList,
           checkFields,
           limits,
-          vis
+          vis,
+          cardLabels
         });
       }
       settingsLoaded.current = true;
@@ -4437,6 +4657,11 @@ function ACInspectionApp() {
       vis
     });
   }, [vis]);
+  useEffect(() => {
+    if (db && settingsLoaded.current) db.ref("appSettings").update({
+      cardLabels
+    });
+  }, [cardLabels]);
 
   // ─── Firebase：点検記録の購読（選択中の点検回・室内機・室外機それぞれ全件をリアルタイム反映）───
   useEffect(() => {
@@ -4468,9 +4693,20 @@ function ACInspectionApp() {
     setFlash(msg);
     setTimeout(() => setFlash(""), 2400);
   };
+  // 同じ系統（機器番号の「-数字」を除いた部分が一致）の他の室内機に、すでに室外機データ（E/F/H等）が入力済みの場合、
+  // 誤って別の値で上書きしないよう、確認して「はい」と答えるまで室外機欄の入力をロックする
+  const parentOutdoorUnitNo = u => String(u || "").replace(/-\d+$/, "");
+  const deviceKeyForOutdoorLock = (form.managementNo || "") + "|" + (form.unitNo || "");
+  const siblingOutdoorRecord = inspectionMode === "indoor" && form.unitNo ? indoorRecords.find(r => r.unitNo !== form.unitNo && parentOutdoorUnitNo(r.unitNo) === parentOutdoorUnitNo(form.unitNo) && OUTDOOR_FIELDS.some(f => r.values?.[f.code])) : null;
+  const outdoorLocked = inspectionMode === "indoor" && !!siblingOutdoorRecord && outdoorUnlockedFor !== deviceKeyForOutdoorLock;
+  const requestUnlockOutdoor = () => {
+    if (window.confirm("室外機データは入力済です。入力するとデータは上書きされます。入力しますか？")) {
+      setOutdoorUnlockedFor(deviceKeyForOutdoorLock);
+    }
+  };
   const visIn = INDOOR_FIELDS.filter(f => vis[f.code]);
   const visOut = OUTDOOR_FIELDS.filter(f => vis[f.code]);
-  const visFields = ALL_FIELDS.filter(f => vis[f.code]);
+  const visFields = outdoorLocked ? ALL_FIELDS.filter(f => vis[f.code] && f.group !== "outdoor") : ALL_FIELDS.filter(f => vis[f.code]);
   const ciFields = checkFields.filter(f => f.group === "check_in");
   // 測定値項目＋室内機チェック項目を1本の連続シーケンスにして、同じ右側パネル・同じ手の位置でENTERまたは○×を続けて入力できるようにする
   const focusSeq = [...visFields, ...ciFields];
@@ -4690,6 +4926,18 @@ function ACInspectionApp() {
     setNumDisp("");
     isOvr.current = false;
   };
+  // ③ 保存後にデータ一覧へ戻る
+  const closeSaveToList = () => {
+    const insp = saveModal?.inspector || form.inspector;
+    const date = saveModal?.inspectionDate || form.inspectionDate;
+    setSaveModal(null);
+    setForm(emptyForm(insp, date));
+    setStep(1);
+    setActiveCode(null);
+    setNumDisp("");
+    isOvr.current = false;
+    setView("list");
+  };
   const handleEdit = id => {
     const r = records.find(x => x.id === id);
     if (r) {
@@ -4855,13 +5103,15 @@ function ACInspectionApp() {
   const [showVoiceMemo, setShowVoiceMemo] = useState(false); // ボイスメモモーダル（アプリ全体向け・iPadのみ）
   const [floorFilter, setFloorFilter] = useState(null); // 階フィルター（null=全階）
 
-  // 一覧・集計・印刷では室内機/室外機の記録を両方まとめて1行にする
+  // 一覧・集計・印刷では室内機/室外機の記録を両方まとめて1行にする（parentOutdoorUnitNoは上部で定義済み）
   const tRows = (() => {
     if (devList.length > 0) {
       return devList.map(d => ({
         ...d,
         indoorRecord: indoorRecords.find(r => r.managementNo === d.managementNo && r.unitNo === d.unitNo) || null,
-        outdoorRecord: outdoorRecords.find(r => r.managementNo === d.managementNo && r.unitNo === d.unitNo) || null
+        outdoorRecord: outdoorRecords.find(r => r.managementNo === d.managementNo && r.unitNo === d.unitNo) || null,
+        // 同じ系統の室内機（機器番号が"この機器番号-数字"の形）で入力された室外機側の測定値（E/F/H等）を拾えるように
+        linkedIndoorRecords: indoorRecords.filter(r => r.unitNo !== d.unitNo && parentOutdoorUnitNo(r.unitNo) === d.unitNo)
       }));
     }
     const map = new Map();
@@ -4887,14 +5137,24 @@ function ACInspectionApp() {
         outdoorRecord: r
       });
     });
-    return [...map.values()];
+    return [...map.values()].map(row => ({
+      ...row,
+      linkedIndoorRecords: indoorRecords.filter(r => r.unitNo !== row.unitNo && parentOutdoorUnitNo(r.unitNo) === row.unitNo)
+    }));
   })();
-  // 行から値を取り出す共通ヘルパー（室内機優先→室外機フォールバック）
+  // 行から値を取り出す共通ヘルパー（室内機優先→室外機→同系統の室内機で入力された室外機データの順にフォールバック）
+  // ※同系統の室内機からの値は「室外機（アウトドア）」グループの項目（E/F/H等）のみを対象にする（b1等の室内機データはその室内機自身の行にのみ表示する）
   const rowFieldVal = (row, code) => {
     const iv = row.indoorRecord?.values?.[code];
     if (iv) return iv;
     const ov = row.outdoorRecord?.values?.[code];
     if (ov) return ov;
+    if (row.linkedIndoorRecords && ALL_FIELDS.find(f => f.code === code)?.group === "outdoor") {
+      for (const r of row.linkedIndoorRecords) {
+        const lv = r.values?.[code];
+        if (lv) return lv;
+      }
+    }
     return "";
   };
   const rowMeta = (row, key) => row.indoorRecord?.[key] || row.outdoorRecord?.[key] || "";
@@ -5044,7 +5304,8 @@ function ACInspectionApp() {
     a.download = "ac_check_list_" + new Date().toISOString().slice(0, 10) + ".tsv";
     a.click();
   };
-  const [showExportConfirm, setShowExportConfirm] = useState(null); // 絞り込み中のCSV出力確認ポップアップ（null=非表示、配列=絞り込み内容一覧）
+  // 絞り込み中の出力確認ポップアップ（null=非表示／{list,run,label}=絞り込み内容・実行する出力関数・表示ラベル）。CSV出力・点検表出力で共用。
+  const [showExportConfirm, setShowExportConfirm] = useState(null);
   const handleCSVExportClick = () => {
     if (IS_IPAD) {
       showFlash("⚠️ iPadではこの機能は使えません");
@@ -5056,9 +5317,223 @@ function ACInspectionApp() {
     }
     const active = activeFilterDescriptions();
     if (active.length > 0) {
-      setShowExportConfirm(active);
+      setShowExportConfirm({
+        list: active,
+        run: exportListAsCSV,
+        label: "CSV"
+      });
     } else {
       exportListAsCSV();
+    }
+  };
+
+  // ─── 点検表（Excel）出力 ─────────────────────────────────────
+  // 「エアコン定期点検.xls」の室内機／室外機シートと同じレイアウトを、Excelが解釈できるHTMLテーブル（拡張子.xls）として出力する。
+  // SheetJSの書き込み（コミュニティ版）は罫線・太字・背景色などのセル装飾を保存できないため、
+  // 罫線・結合セル・見出し文字などレイアウトが本質的なこの点検表には、HTMLテーブル＋インラインCSSの方式を使う。
+  const escapeHtml = v => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const fmtDateMD = iso => {
+    const m = String(iso || "").match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    return m ? parseInt(m[2], 10) + "/" + parseInt(m[3], 10) : iso || "";
+  };
+  const deriveVerdict = checks => {
+    const vals = Object.values(checks || {}).filter(v => v !== "");
+    if (vals.length === 0) return "";
+    return vals.includes("×") ? "否" : "合";
+  };
+  const criteriaTextFor = label => {
+    const l = String(label || "");
+    if (/リーク/.test(l)) return "漏れがないこと";
+    if (/汚れ/.test(l)) return "汚れがないこと";
+    if (/清掃/.test(l)) return "清掃実施のこと";
+    return "異常がないこと";
+  };
+  const RPT_STY = {
+    title: 'style="border:none;font-size:13pt;font-weight:bold;"',
+    blank: 'style="border:none;"',
+    hdr: 'style="border:1px solid #000;background:#DCE6F1;font-weight:bold;text-align:center;font-size:9pt;padding:3px 5px;white-space:nowrap;"',
+    crit: 'style="border:1px solid #000;background:#F2F2F2;text-align:center;font-size:8pt;padding:3px 5px;white-space:nowrap;"',
+    cell: 'style="border:1px solid #000;text-align:center;font-size:9pt;padding:3px 6px;white-space:nowrap;"',
+    cellL: 'style="border:1px solid #000;text-align:left;font-size:9pt;padding:3px 6px;white-space:nowrap;"',
+    legend: 'style="border:none;font-size:9pt;color:#444;padding-top:6px;"'
+  };
+  // 室内機シート：1行＝1台。既存点検表の3段見出し（点検日/部屋名/管理番号=3行結合、チェック項目見出し=2行結合＋3行目に管理値、
+  // 運転調整・データ採取=4列結合＋2行目に運転モード/設定温度/吸込温度/吹出温度、点検者/判定/備考=3行結合）を再現する。
+  const buildIndoorSheetHtml = (rows, buildingLabel) => {
+    const ci = checkFields.filter(f => f.group === "check_in");
+    const totalCols = 3 + ci.length + 4 + 3;
+    let html = "<table>";
+    html += '<tr><td colspan="' + totalCols + '" ' + RPT_STY.title + '>保守点検業務' + (buildingLabel ? " [" + escapeHtml(buildingLabel) + "]" : "") + '</td></tr>';
+    html += '<tr><td colspan="' + totalCols + '" ' + RPT_STY.title + '>パッケージエアコン・ビルマルチエアコン定期点検（室内機）</td></tr>';
+    html += '<tr><td colspan="' + totalCols + '" ' + RPT_STY.blank + '>&nbsp;</td></tr>';
+    html += "<tr>";
+    html += '<td rowspan="3" ' + RPT_STY.hdr + '>点検日</td>';
+    html += '<td rowspan="3" ' + RPT_STY.hdr + '>部屋名</td>';
+    html += '<td rowspan="3" ' + RPT_STY.hdr + '>管理番号</td>';
+    ci.forEach(f => {
+      html += '<td rowspan="2" ' + RPT_STY.hdr + '>' + escapeHtml(f.category) + '</td>';
+    });
+    html += '<td colspan="4" ' + RPT_STY.hdr + '>運転調整・データ採取</td>';
+    html += '<td rowspan="3" ' + RPT_STY.hdr + '>点検者</td>';
+    html += '<td rowspan="3" ' + RPT_STY.hdr + '>判定</td>';
+    html += '<td rowspan="3" ' + RPT_STY.hdr + '>備考</td>';
+    html += "</tr><tr>";
+    ["運転モード", "設定温度", "吸込温度", "吹出温度"].forEach(t => {
+      html += '<td ' + RPT_STY.hdr + '>' + t + '</td>';
+    });
+    html += "</tr><tr>";
+    ci.forEach(f => {
+      html += '<td ' + RPT_STY.crit + '>' + escapeHtml(criteriaTextFor(f.label)) + '</td>';
+    });
+    html += '<td ' + RPT_STY.crit + '></td><td ' + RPT_STY.crit + '></td>';
+    html += '<td ' + RPT_STY.crit + '>15～30℃</td><td ' + RPT_STY.crit + '>5～50℃</td>';
+    html += "</tr>";
+    rows.forEach(row => {
+      const ir = row.indoorRecord;
+      html += "<tr>";
+      html += '<td ' + RPT_STY.cell + '>' + escapeHtml(fmtDateMD(ir?.inspectionDate)) + '</td>';
+      html += '<td ' + RPT_STY.cellL + '>' + escapeHtml(row.room) + '</td>';
+      html += '<td ' + RPT_STY.cell + '>' + escapeHtml(row.managementNo) + '</td>';
+      ci.forEach(f => {
+        html += '<td ' + RPT_STY.cell + '>' + escapeHtml(ir?.checks?.[f.code] || "") + '</td>';
+      });
+      html += '<td ' + RPT_STY.cell + '>' + escapeHtml(ir?.preMode || "") + '</td>';
+      html += '<td ' + RPT_STY.cell + '>' + escapeHtml(ir?.preSetTemp || "") + '</td>';
+      html += '<td ' + RPT_STY.cell + '>' + escapeHtml(rowFieldVal(row, "b1")) + '</td>';
+      html += '<td ' + RPT_STY.cell + '>' + escapeHtml(rowFieldVal(row, "b2")) + '</td>';
+      html += '<td ' + RPT_STY.cell + '>' + escapeHtml(ir?.inspector || "") + '</td>';
+      html += '<td ' + RPT_STY.cell + '>' + escapeHtml(deriveVerdict(ir?.checks)) + '</td>';
+      html += '<td ' + RPT_STY.cellL + '>' + escapeHtml(ir?.remarks || "") + '</td>';
+      html += "</tr>";
+    });
+    html += '<tr><td colspan="' + totalCols + '" ' + RPT_STY.legend + '>凡例（良好：○　注意要：△　不良：×　処置後良好：●）</td></tr>';
+    html += "</table>";
+    return html;
+  };
+  // 室外機シート：1列＝1台の横並び形式をそのまま再現する。チェック項目はcategory単位で行結合し、
+  // 実測値6項目（od1〜od6）の値はv9.26の系統紐付け（同系統の室内機記録からのフォールバック）を含むrowFieldValをそのまま利用する。
+  const buildOutdoorSheetHtml = (rows, buildingLabel) => {
+    const coAll = checkFields.filter(f => f.group === "check_out");
+    const coMain = coAll.filter(f => f.category !== "作業終了時");
+    const coEnd = coAll.filter(f => f.category === "作業終了時");
+    const totalCols = 3 + rows.length;
+    let html = "<table>";
+    html += '<tr><td colspan="' + totalCols + '" ' + RPT_STY.title + '>保守点検業務' + (buildingLabel ? " [" + escapeHtml(buildingLabel) + "]" : "") + '</td></tr>';
+    html += '<tr><td colspan="' + totalCols + '" ' + RPT_STY.title + '>パッケージエアコン・ビルマルチエアコン定期点検（室外機）</td></tr>';
+    html += '<tr><td colspan="' + totalCols + '" ' + RPT_STY.blank + '>&nbsp;</td></tr>';
+    const labelRow = (label, vals) => {
+      let r = '<tr><td colspan="3" ' + RPT_STY.hdr + '>' + escapeHtml(label) + '</td>';
+      vals.forEach(v => {
+        r += '<td ' + RPT_STY.cell + '>' + escapeHtml(v) + '</td>';
+      });
+      return r + "</tr>";
+    };
+    html += labelRow("点検日", rows.map(row => fmtDateMD(rowMeta(row, "inspectionDate"))));
+    html += labelRow("管理番号", rows.map(row => row.managementNo || ""));
+    html += labelRow("客先呼称", rows.map(row => row.room || ""));
+    html += "<tr>";
+    html += '<td colspan="2" ' + RPT_STY.hdr + '>点検項目</td><td ' + RPT_STY.hdr + '>管理値</td>';
+    rows.forEach(() => {
+      html += '<td ' + RPT_STY.hdr + '>結果・処置</td>';
+    });
+    html += "</tr>";
+    const renderChecklistGroup = fields => {
+      const cats = [];
+      fields.forEach(f => {
+        const last = cats[cats.length - 1];
+        if (last && last.category === f.category) last.items.push(f);else cats.push({
+          category: f.category,
+          items: [f]
+        });
+      });
+      let out = "";
+      cats.forEach(({
+        category,
+        items
+      }) => {
+        items.forEach((f, i) => {
+          out += "<tr>";
+          if (i === 0) out += '<td rowspan="' + items.length + '" ' + RPT_STY.hdr + '>' + escapeHtml(category) + '</td>';
+          out += '<td ' + RPT_STY.hdr + '>' + escapeHtml(f.label) + '</td>';
+          out += '<td ' + RPT_STY.crit + '>' + escapeHtml(criteriaTextFor(f.label)) + '</td>';
+          rows.forEach(row => {
+            out += '<td ' + RPT_STY.cell + '>' + escapeHtml(row.outdoorRecord?.checks?.[f.code] || "") + '</td>';
+          });
+          out += "</tr>";
+        });
+      });
+      return out;
+    };
+    html += renderChecklistGroup(coMain);
+    OUTDOOR_FIELDS.forEach((f, i) => {
+      html += "<tr>";
+      if (i === 0) html += '<td rowspan="' + OUTDOOR_FIELDS.length + '" ' + RPT_STY.hdr + '>運転調整・データ採取</td>';
+      html += '<td ' + RPT_STY.hdr + '>' + escapeHtml(f.label) + '</td><td ' + RPT_STY.crit + '></td>';
+      rows.forEach(row => {
+        const v = rowFieldVal(row, f.code);
+        html += '<td ' + RPT_STY.cell + '>' + escapeHtml(v ? v + f.unit : "") + '</td>';
+      });
+      html += "</tr>";
+    });
+    html += renderChecklistGroup(coEnd);
+    html += labelRow("点検者", rows.map(row => rowMeta(row, "inspector") || ""));
+    html += labelRow("判定", rows.map(row => deriveVerdict(row.outdoorRecord?.checks)));
+    html += labelRow("特記事項", rows.map(row => rowRemarks(row) || ""));
+    html += '<tr><td colspan="' + totalCols + '" ' + RPT_STY.legend + '>凡例（良好：○　注意要：△　不良：×　処置後良好：●）</td></tr>';
+    html += "</table>";
+    return html;
+  };
+  const reportScopeRows = () => ({
+    indoorRows: filteredRows.filter(row => rowStatsType(row) === "indoor" && rowIndoorDone(row)),
+    outdoorRows: filteredRows.filter(row => rowStatsType(row) === "outdoor" && (rowOutdoorDone(row) || OUTDOOR_FIELDS.some(f => rowFieldVal(row, f.code))))
+  });
+  const exportInspectionReport = () => {
+    const {
+      indoorRows,
+      outdoorRows
+    } = reportScopeRows();
+    if (indoorRows.length === 0 && outdoorRows.length === 0) {
+      showFlash("⚠️ 出力できるデータがありません");
+      return;
+    }
+    const buildings = [...new Set([...indoorRows, ...outdoorRows].map(row => colValue(row, "建物")))].filter(b => b && b !== "（未設定）");
+    const buildingLabel = buildings.length === 1 ? buildings[0] : "";
+    const indoorHtml = buildIndoorSheetHtml(indoorRows, buildingLabel);
+    const outdoorHtml = buildOutdoorSheetHtml(outdoorRows, buildingLabel);
+    // Excelの別シートタブ（室内機／室外機）に分けるMHTML（multipart/related）形式を試したが、
+    // Excel COM自動化での検証で正しく開けなかった（2枚とも空になる）ため、確実に動作する
+    // 「1枚のシートに室内機セクション→室外機セクションを縦に並べる」形式を採用する。
+    const doc = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">' + "<head><meta charset=\"UTF-8\">" + "<style>table{border-collapse:collapse;} td{font-family:'ＭＳ Ｐゴシック',sans-serif;}</style>" + "</head><body>" + indoorHtml + '<div style="height:24px;">&nbsp;</div>' + outdoorHtml + "</body></html>";
+    const blob = new Blob(["﻿" + doc], {
+      type: "application/vnd.ms-excel;charset=utf-8;"
+    });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "点検表_" + (currentRound?.label || new Date().toISOString().slice(0, 10)) + ".xls";
+    a.click();
+  };
+  const handleReportExportClick = () => {
+    if (IS_IPAD) {
+      showFlash("⚠️ iPadではこの機能は使えません");
+      return;
+    }
+    const {
+      indoorRows,
+      outdoorRows
+    } = reportScopeRows();
+    if (indoorRows.length === 0 && outdoorRows.length === 0) {
+      showFlash("⚠️ 出力できるデータがありません");
+      return;
+    }
+    const active = activeFilterDescriptions();
+    if (active.length > 0) {
+      setShowExportConfirm({
+        list: active,
+        run: exportInspectionReport,
+        label: "点検表"
+      });
+    } else {
+      exportInspectionReport();
     }
   };
 
@@ -5322,7 +5797,11 @@ function ACInspectionApp() {
       setSessionInfo(p => ({
         ...(p || {}),
         date: info.date,
-        inspector: info.inspector
+        inspector: info.inspector,
+        inspector1: info.inspector1,
+        inspector2: info.inspector2,
+        inspector3: info.inspector3,
+        inspector4: info.inspector4
       }));
       setForm(emptyForm(info.inspector, info.date));
       setLastInsp(info.inspector);
@@ -5389,7 +5868,9 @@ function ACInspectionApp() {
     focusSeq: focusSeq,
     isCheckCode: isCheckCode,
     setCheckAndAdvance: setCheckAndAdvance,
-    onSwitchMode: onSwitchMode
+    onSwitchMode: onSwitchMode,
+    outdoorLocked: outdoorLocked,
+    requestUnlockOutdoor: requestUnlockOutdoor
   })))), view === "list" && /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
@@ -5404,7 +5885,8 @@ function ACInspectionApp() {
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
-      marginBottom: 10
+      marginBottom: 10,
+      gap: 8
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5412,7 +5894,26 @@ function ACInspectionApp() {
       fontWeight: 800,
       color: C.navy
     }
-  }, "\uD83D\uDCCB \u30C7\u30FC\u30BF\u4E00\u89A7"), /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDCCB \u30C7\u30FC\u30BF\u4E00\u89A7"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: handleReportExportClick,
+    title: IS_IPAD ? "iPadではこの機能は使えません" : undefined,
+    style: {
+      padding: "7px 14px",
+      borderRadius: 8,
+      border: "none",
+      cursor: IS_IPAD ? "not-allowed" : "pointer",
+      fontSize: 12,
+      fontWeight: 700,
+      whiteSpace: "nowrap",
+      background: IS_IPAD ? C.g200 : C.navy,
+      color: IS_IPAD ? C.g400 : C.white
+    }
+  }, "\uD83D\uDCC4 ", IS_IPAD ? "点検表出力（iPad不可）" : "点検表出力"), /*#__PURE__*/React.createElement("button", {
     onClick: handleCSVExportClick,
     title: IS_IPAD ? "iPadではこの機能は使えません" : undefined,
     style: {
@@ -5422,10 +5923,11 @@ function ACInspectionApp() {
       cursor: IS_IPAD ? "not-allowed" : "pointer",
       fontSize: 12,
       fontWeight: 700,
+      whiteSpace: "nowrap",
       background: IS_IPAD ? C.g200 : filteredRows.length > 0 ? C.teal : C.g200,
       color: IS_IPAD ? C.g400 : filteredRows.length > 0 ? C.white : C.g400
     }
-  }, "\uD83D\uDCBE ", IS_IPAD ? "CSV出力（iPad不可）" : "CSV出力")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCBE ", IS_IPAD ? "CSV出力（iPad不可）" : "CSV出力"))), /*#__PURE__*/React.createElement("div", {
     style: {
       flexShrink: 0,
       display: "flex",
@@ -5577,7 +6079,7 @@ function ACInspectionApp() {
         color: floorFilter === fl ? C.white : C.g600
       }
     }, fl)));
-  })(), floorFilter && /*#__PURE__*/React.createElement("div", {
+  })(), (floorFilter || buildingFilter) && /*#__PURE__*/React.createElement("div", {
     style: {
       flexShrink: 0,
       display: "flex",
@@ -5596,8 +6098,11 @@ function ACInspectionApp() {
       color: C.teal,
       flex: 1
     }
-  }, "\uD83C\uDFE2 ", floorFilter, " \u306E\u307F\u8868\u793A\u4E2D"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setFloorFilter(null),
+  }, "\uD83C\uDFE2 ", [buildingFilter, floorFilter].filter(Boolean).join(" ・ "), " \u306E\u307F\u8868\u793A\u4E2D"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setBuildingFilter(null);
+      setFloorFilter(null);
+    },
     style: {
       padding: "5px 12px",
       borderRadius: 7,
@@ -6010,6 +6515,7 @@ function ACInspectionApp() {
       setInspList([]);
       setLimits(defLim());
       setVis(defVis());
+      setCardLabels(defCardLabels());
       setCheckFields([{
         code: "ci1",
         label: "配管類支持異常の有無",
@@ -6093,10 +6599,11 @@ function ACInspectionApp() {
     }
   }, [{
     id: "device",
-    title: "機器リスト",
+    title: cardLabels.device || "機器リスト",
     icon: "📂",
     color: C.navy,
-    badge: devList.length > 0 ? devList.length + "件" : null
+    badge: devList.length > 0 ? devList.length + "件" : null,
+    editable: true
   }, {
     id: "cols",
     title: "表示列設定",
@@ -6104,39 +6611,42 @@ function ACInspectionApp() {
     color: C.teal,
     badge: devVisibleCols.length > 0 ? devVisibleCols.length + "列" : devColumns.length > 0 ? "全列" : null
   }, {
-    id: "checkitems",
-    title: "点検項目",
-    icon: "✅",
-    color: "#059669",
-    badge: checkFields.length > 0 ? checkFields.length + "項目" : null
+    id: "criteria",
+    title: cardLabels.criteria || "点検基準設定",
+    icon: "🎯",
+    color: C.purple,
+    badge: checkFields.length > 0 ? checkFields.length + "項目" : null,
+    editable: true
   }, {
     id: "inspector",
-    title: "点検者リスト",
+    title: cardLabels.inspector || "点検者リスト",
     icon: "👤",
     color: C.blue,
-    badge: inspList.length > 0 ? inspList.length + "名" : null
+    badge: inspList.length > 0 ? inspList.length + "名" : null,
+    editable: true
   }, {
     id: "vis",
     title: "表示項目",
     icon: "👁️",
     color: C.teal,
     badge: null
-  }, {
-    id: "lim",
-    title: "正常値範囲",
-    icon: "⚙️",
-    color: C.purple,
-    badge: null
   }].map(({
     id,
     title,
     icon,
     color,
-    badge
-  }) => /*#__PURE__*/React.createElement("button", {
+    badge,
+    editable
+  }) => /*#__PURE__*/React.createElement("div", {
     key: id,
+    style: {
+      position: "relative"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setModalSec(id),
     style: {
+      width: "100%",
+      boxSizing: "border-box",
       background: C.white,
       borderRadius: 14,
       boxShadow: "0 2px 10px rgba(0,0,0,0.07)",
@@ -6168,7 +6678,33 @@ function ACInspectionApp() {
       borderRadius: 8,
       fontWeight: 700
     }
-  }, badge)))), modalSec && /*#__PURE__*/React.createElement("div", {
+  }, badge)), editable && /*#__PURE__*/React.createElement("button", {
+    onMouseDown: e => e.preventDefault(),
+    onClick: e => {
+      e.stopPropagation();
+      const next = window.prompt("表示名を入力してください", title);
+      if (next && next.trim()) setCardLabels(p => ({
+        ...p,
+        [id]: next.trim()
+      }));
+    },
+    style: {
+      position: "absolute",
+      top: 6,
+      right: 6,
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      border: "none",
+      background: C.g100,
+      color: C.g500,
+      cursor: "pointer",
+      fontSize: 12,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, "\u270F\uFE0F")))), modalSec && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
@@ -6194,7 +6730,7 @@ function ACInspectionApp() {
   }, (() => {
     const sec = {
       device: {
-        title: "機器リスト CSV読込",
+        title: (cardLabels.device || "機器リスト") + " CSV読込",
         icon: "📂",
         color: C.navy
       },
@@ -6203,13 +6739,13 @@ function ACInspectionApp() {
         icon: "🗂️",
         color: C.teal
       },
-      checkitems: {
-        title: "点検項目 Excel読込",
-        icon: "✅",
-        color: "#059669"
+      criteria: {
+        title: cardLabels.criteria || "点検基準設定",
+        icon: "🎯",
+        color: C.purple
       },
       inspector: {
-        title: "点検者リスト CSV読込",
+        title: (cardLabels.inspector || "点検者リスト") + " CSV読込",
         icon: "👤",
         color: C.blue
       },
@@ -6217,11 +6753,6 @@ function ACInspectionApp() {
         title: "表示項目設定",
         icon: "👁️",
         color: C.teal
-      },
-      lim: {
-        title: "正常値範囲設定",
-        icon: "⚙️",
-        color: C.purple
       }
     }[modalSec] || {};
     return /*#__PURE__*/React.createElement("div", {
@@ -6279,13 +6810,11 @@ function ACInspectionApp() {
   }, {
     id: "cols"
   }, {
-    id: "checkitems"
+    id: "criteria"
   }, {
     id: "inspector"
   }, {
     id: "vis"
-  }, {
-    id: "lim"
   }].map(({
     id
   }) => modalSec === id && /*#__PURE__*/React.createElement("div", {
@@ -6393,7 +6922,240 @@ function ACInspectionApp() {
       color: C.g400,
       fontSize: 11
     }
-  }, "\u2026\u4ED6 ", devList.length - 5, "\u4EF6"))))))), id === "cols" && /*#__PURE__*/React.createElement("div", null, devColumns.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, "\u2026\u4ED6 ", devList.length - 5, "\u4EF6")))))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 700,
+      color: C.g500,
+      marginBottom: 6
+    }
+  }, "1\u4EF6\u3092\u691C\u7D22\u3057\u3066\u7DE8\u96C6\u30FB\u8FFD\u52A0\u30FB\u524A\u9664"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: devEditSearch,
+    onChange: e => setDevEditSearch(e.target.value),
+    placeholder: "\u7BA1\u7406\u756A\u53F7\u30FB\u90E8\u5C4B\u540D\u306A\u3069\u3067\u691C\u7D22\u2026",
+    style: {
+      flex: 1,
+      padding: "9px 12px",
+      borderRadius: 8,
+      border: "1.5px solid " + C.g200,
+      fontSize: 13,
+      outline: "none",
+      boxSizing: "border-box"
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      const cols = devColumns.length > 0 ? devColumns : ["階", "部屋名", "管理番号", "機器番号"];
+      setDevEditIdx("new");
+      setDevEditDraft({
+        _raw: Object.fromEntries(cols.map(c => [c, ""]))
+      });
+    },
+    style: {
+      padding: "9px 14px",
+      borderRadius: 8,
+      border: "none",
+      background: C.green,
+      color: C.white,
+      cursor: "pointer",
+      fontSize: 12,
+      fontWeight: 700,
+      whiteSpace: "nowrap"
+    }
+  }, "\uFF0B \u65B0\u898F\u8FFD\u52A0")), devEditSearch.trim() && (() => {
+    const q = devEditSearch.trim().toLowerCase();
+    const cols = devColumns.length > 0 ? devColumns : [];
+    const matches = devList.map((d, i) => ({
+      d,
+      i
+    })).filter(({
+      d
+    }) => {
+      const hay = (cols.map(c => String(d._raw?.[c] || "")).join(" ") + " " + [d.floor, d.room, d.managementNo, d.unitNo].join(" ")).toLowerCase();
+      return hay.includes(q);
+    });
+    if (matches.length === 0) return /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.g400,
+        padding: "8px 4px"
+      }
+    }, "\u8A72\u5F53\u3059\u308B\u6A5F\u5668\u304C\u3042\u308A\u307E\u305B\u3093");
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 3,
+        maxHeight: 220,
+        overflowY: "auto",
+        scrollbarGutter: "stable",
+        marginBottom: 10
+      }
+    }, matches.slice(0, 30).map(({
+      d,
+      i
+    }) => /*#__PURE__*/React.createElement("button", {
+      key: i,
+      onClick: () => {
+        setDevEditIdx(i);
+        setDevEditDraft({
+          _raw: {
+            ...d._raw
+          }
+        });
+      },
+      style: {
+        textAlign: "left",
+        padding: "7px 10px",
+        borderRadius: 7,
+        border: "1.5px solid " + (devEditIdx === i ? C.blue : C.g200),
+        background: devEditIdx === i ? "#EFF6FF" : C.white,
+        cursor: "pointer",
+        fontSize: 12,
+        color: C.g700
+      }
+    }, d.floor, " ", d.room, " ", d.managementNo, "/", d.unitNo)), matches.length > 30 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.g400,
+        textAlign: "center",
+        padding: "4px 0"
+      }
+    }, "\u307B\u304B ", matches.length - 30, "\u4EF6\u2026\u7D5E\u308A\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044"));
+  })(), devEditDraft && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "12px 14px",
+      background: C.g50,
+      borderRadius: 10,
+      border: "1.5px solid " + C.g200
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: C.navy,
+      marginBottom: 10
+    }
+  }, devEditIdx === "new" ? "🆕 新規機器" : "✏️ 編集中"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 8,
+      marginBottom: 12
+    }
+  }, (devColumns.length > 0 ? devColumns : ["階", "部屋名", "管理番号", "機器番号"]).map(col => /*#__PURE__*/React.createElement("div", {
+    key: col,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.g500,
+      width: 90,
+      flexShrink: 0
+    }
+  }, col), /*#__PURE__*/React.createElement("input", {
+    value: devEditDraft._raw[col] || "",
+    onChange: e => setDevEditDraft(p => ({
+      ...p,
+      _raw: {
+        ...p._raw,
+        [col]: e.target.value
+      }
+    })),
+    style: {
+      flex: 1,
+      padding: "7px 10px",
+      borderRadius: 7,
+      border: "1.5px solid " + C.g200,
+      fontSize: 13,
+      outline: "none",
+      boxSizing: "border-box"
+    }
+  })))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      const cols = devColumns.length > 0 ? devColumns : Object.keys(devEditDraft._raw);
+      const core = deriveDevCore(devEditDraft._raw, cols);
+      if (!core.managementNo && !core.unitNo) {
+        showFlash("⚠️ 管理番号または機器番号を入力してください");
+        return;
+      }
+      const finalDev = {
+        ...core,
+        _raw: {
+          ...devEditDraft._raw
+        }
+      };
+      if (devEditIdx === "new") {
+        setDevList(p => [...p, finalDev]);
+        if (devColumns.length === 0) setDevColumns(cols);
+      } else {
+        setDevList(p => p.map((d, i) => i === devEditIdx ? finalDev : d));
+      }
+      setDevEditIdx(null);
+      setDevEditDraft(null);
+      setDevEditSearch("");
+      showFlash("✅ 保存しました");
+    },
+    style: {
+      flex: 1,
+      padding: "10px",
+      borderRadius: 8,
+      border: "none",
+      background: C.green,
+      color: C.white,
+      cursor: "pointer",
+      fontWeight: 700,
+      fontSize: 13
+    }
+  }, "\uD83D\uDCBE \u4FDD\u5B58"), devEditIdx !== "new" && /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      if (!window.confirm("この機器を削除しますか？")) return;
+      setDevList(p => p.filter((_, i) => i !== devEditIdx));
+      setDevEditIdx(null);
+      setDevEditDraft(null);
+      showFlash("🗑️ 削除しました");
+    },
+    style: {
+      padding: "10px 16px",
+      borderRadius: 8,
+      border: "1.5px solid " + C.red,
+      background: "#FEF2F2",
+      color: C.red,
+      cursor: "pointer",
+      fontWeight: 700,
+      fontSize: 13
+    }
+  }, "\uD83D\uDDD1\uFE0F \u524A\u9664"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setDevEditIdx(null);
+      setDevEditDraft(null);
+    },
+    style: {
+      padding: "10px 16px",
+      borderRadius: 8,
+      border: "1.5px solid " + C.g300,
+      background: C.white,
+      color: C.g500,
+      cursor: "pointer",
+      fontWeight: 700,
+      fontSize: 13
+    }
+  }, "\u30AD\u30E3\u30F3\u30BB\u30EB"))))), id === "cols" && /*#__PURE__*/React.createElement("div", null, devColumns.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "12px 16px",
       background: "#FFF7ED",
@@ -6484,7 +7246,39 @@ function ACInspectionApp() {
         color: C.g400
       }
     }, devList.filter(d => d._raw && d._raw[col]).length, "\u4EF6\u306B\u5024\u3042\u308A"));
-  })))), id === "checkitems" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+  })))), id === "criteria" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setCriteriaTab("checkitems"),
+    style: {
+      flex: 1,
+      padding: "10px",
+      borderRadius: 9,
+      border: "2px solid " + (criteriaTab === "checkitems" ? "#059669" : C.g200),
+      background: criteriaTab === "checkitems" ? "#05966912" : C.white,
+      color: criteriaTab === "checkitems" ? "#059669" : C.g500,
+      fontWeight: 800,
+      fontSize: 13,
+      cursor: "pointer"
+    }
+  }, "\u2705 \u70B9\u691C\u9805\u76EE"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setCriteriaTab("lim"),
+    style: {
+      flex: 1,
+      padding: "10px",
+      borderRadius: 9,
+      border: "2px solid " + (criteriaTab === "lim" ? C.purple : C.g200),
+      background: criteriaTab === "lim" ? C.purple + "12" : C.white,
+      color: criteriaTab === "lim" ? C.purple : C.g500,
+      fontWeight: 800,
+      fontSize: 13,
+      cursor: "pointer"
+    }
+  }, "\u2699\uFE0F \u6B63\u5E38\u5024\u7BC4\u56F2")), id === "criteria" && criteriaTab === "checkitems" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 13,
       color: C.g500,
@@ -6575,63 +7369,134 @@ function ACInspectionApp() {
       color: C.green,
       fontWeight: 700
     }
-  }, "\u2705 ", checkFields.length, "\u9805\u76EE\u8AAD\u8FBC\u6E08")), checkFields.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "\u2705 ", checkFields.length, "\u9805\u76EE\u8AAD\u8FBC\u6E08")), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: C.g500,
+      marginBottom: 8
+    }
+  }, "\u4E0B\u306E\u4E00\u89A7\u304B\u3089\u76F4\u63A5\u3001\u8FFD\u52A0\u30FB\u4FEE\u6B63\u30FB\u524A\u9664\u3082\u3067\u304D\u307E\u3059\u3002"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
       gap: 2,
-      maxHeight: 300,
+      maxHeight: 340,
       overflowY: "auto",
       scrollbarGutter: "stable"
     }
-  }, (() => {
-    const cats = [...new Set(checkFields.map(f => f.category))];
-    return cats.map(cat => /*#__PURE__*/React.createElement("div", {
-      key: cat,
-      style: {
-        marginBottom: 6
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        fontWeight: 700,
-        color: "#059669",
-        marginBottom: 3,
-        padding: "2px 6px",
-        background: "#ECFDF5",
-        borderRadius: 4,
-        display: "inline-block"
-      }
-    }, cat), checkFields.filter(f => f.category === cat).map(f => /*#__PURE__*/React.createElement("div", {
-      key: f.code,
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "5px 10px",
-        borderRadius: 7,
-        background: C.g50,
-        marginBottom: 2
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 13,
-        color: C.g700,
-        flex: 1
-      }
-    }, f.label), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 10,
-        color: C.g400
-      }
-    }, f.code)))));
-  })())), id === "inspector" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+  }, [{
+    group: "check_in",
+    label: "室内機（インドア）",
+    color: C.blue
+  }, {
+    group: "check_out",
+    label: "室外機（アウトドア）",
+    color: C.teal
+  }].map(({
+    group,
+    label,
+    color
+  }) => /*#__PURE__*/React.createElement("div", {
+    key: group,
+    style: {
+      marginBottom: 18
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 13,
+      color,
+      borderBottom: "2px solid " + color,
+      paddingBottom: 5,
+      marginBottom: 6
+    }
+  }, label), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 4
+    }
+  }, checkFields.map((f, i) => f.group === group && /*#__PURE__*/React.createElement("div", {
+    key: f.code,
+    style: {
+      display: "flex",
+      gap: 6,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: f.category,
+    onChange: e => setCheckFields(p => p.map((x, j) => j === i ? {
+      ...x,
+      category: e.target.value
+    } : x)),
+    placeholder: "\u30AB\u30C6\u30B4\u30EA",
+    style: {
+      width: 110,
+      padding: "7px 8px",
+      borderRadius: 6,
+      border: "1.5px solid " + C.g200,
+      fontSize: 12,
+      outline: "none",
+      boxSizing: "border-box",
+      flexShrink: 0
+    }
+  }), /*#__PURE__*/React.createElement("input", {
+    value: f.label,
+    onChange: e => setCheckFields(p => p.map((x, j) => j === i ? {
+      ...x,
+      label: e.target.value
+    } : x)),
+    placeholder: "\u70B9\u691C\u5185\u5BB9",
+    style: {
+      flex: 1,
+      padding: "7px 8px",
+      borderRadius: 6,
+      border: "1.5px solid " + C.g200,
+      fontSize: 13,
+      outline: "none",
+      boxSizing: "border-box",
+      minWidth: 0
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      if (window.confirm("この項目を削除しますか？")) setCheckFields(p => p.filter((_, j) => j !== i));
+    },
+    style: {
+      padding: "6px 10px",
+      borderRadius: 6,
+      border: "none",
+      background: "#FEF2F2",
+      color: C.red,
+      cursor: "pointer",
+      fontSize: 11,
+      fontWeight: 700,
+      flexShrink: 0
+    }
+  }, "\uD83D\uDDD1\uFE0F")))), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setCheckFields(p => [...p, {
+      code: "ck" + Date.now(),
+      label: "",
+      category: "",
+      group
+    }]),
+    style: {
+      marginTop: 8,
+      padding: "7px 12px",
+      borderRadius: 7,
+      border: "1.5px dashed " + C.g300,
+      background: "none",
+      color,
+      cursor: "pointer",
+      fontSize: 12,
+      fontWeight: 700
+    }
+  }, "\uFF0B ", label, "\u306E\u9805\u76EE\u3092\u8FFD\u52A0"))))), id === "inspector" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 13,
       color: C.g500,
       marginBottom: 12
     }
-  }, "\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8\uFF1A1\u884C\u306B1\u540D\uFF08\u30D8\u30C3\u30C0\u30FC\u306A\u3057\uFF09"), /*#__PURE__*/React.createElement("input", {
+  }, "\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8\uFF1A1\u884C\u306B1\u540D\uFF08\u30D8\u30C3\u30C0\u30FC\u306A\u3057\uFF09\u3002\u4E0B\u306E\u4E00\u89A7\u304B\u3089\u76F4\u63A5\u3001\u8FFD\u52A0\u30FB\u4FEE\u6B63\u30FB\u524A\u9664\u3082\u3067\u304D\u307E\u3059\u3002"), /*#__PURE__*/React.createElement("input", {
     ref: inspRef,
     type: "file",
     accept: ".csv,.xlsx,.xls",
@@ -6644,7 +7509,8 @@ function ACInspectionApp() {
       display: "flex",
       gap: 10,
       alignItems: "center",
-      flexWrap: "wrap"
+      flexWrap: "wrap",
+      marginBottom: 14
     }
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => inspRef.current.click(),
@@ -6664,7 +7530,61 @@ function ACInspectionApp() {
       color: C.green,
       fontWeight: 700
     }
-  }, "\u2705 ", inspList.join("・")))), id === "vis" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+  }, "\u2705 ", inspList.length, "\u540D")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 6
+    }
+  }, inspList.map((name, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: name,
+    onChange: e => setInspList(p => p.map((n, j) => j === i ? e.target.value : n)),
+    placeholder: "\u70B9\u691C\u8005\u540D",
+    style: {
+      flex: 1,
+      padding: "9px 12px",
+      borderRadius: 8,
+      border: "1.5px solid " + C.g200,
+      fontSize: 14,
+      outline: "none",
+      boxSizing: "border-box"
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      if (window.confirm("この点検者を削除しますか？")) setInspList(p => p.filter((_, j) => j !== i));
+    },
+    style: {
+      padding: "8px 12px",
+      borderRadius: 7,
+      border: "none",
+      background: "#FEF2F2",
+      color: C.red,
+      cursor: "pointer",
+      fontSize: 12,
+      fontWeight: 700,
+      flexShrink: 0
+    }
+  }, "\uD83D\uDDD1\uFE0F"))), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setInspList(p => [...p, ""]),
+    style: {
+      marginTop: 4,
+      padding: "9px 14px",
+      borderRadius: 8,
+      border: "1.5px dashed " + C.g300,
+      background: "none",
+      color: C.blue,
+      cursor: "pointer",
+      fontSize: 13,
+      fontWeight: 700
+    }
+  }, "\uFF0B \u70B9\u691C\u8005\u3092\u8FFD\u52A0"))), id === "vis" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 13,
       color: C.g500,
@@ -6783,13 +7703,32 @@ function ACInspectionApp() {
       color: C.g500,
       fontSize: 13
     }
-  }, "\u5168\u9078\u629E"))), id === "lim" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+  }, "\u5168\u9078\u629E"))), id === "criteria" && criteriaTab === "lim" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 12,
+      alignItems: "flex-start"
+    }
+  }, /*#__PURE__*/React.createElement(Numpad, {
+    mode: "numeric",
+    display: limNumDisp,
+    onPress: limOnPress,
+    onPrev: () => limMove(-1),
+    onNext: () => limMove(1),
+    canPrev: limIdx > 0,
+    canNext: limIdx >= 0
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 13,
       color: C.g500,
       marginBottom: 14
     }
-  }, "\u2705 \u3092\u30C1\u30A7\u30C3\u30AF\u3059\u308B\u3068\u6700\u5C0F\u30FB\u6700\u5927\u306E\u5165\u529B\u6B04\u304C\u8868\u793A\u3055\u308C\u307E\u3059\u3002"), [{
+  }, "\u6700\u5C0F\u30FB\u6700\u5927\u306F\u5E38\u306B\u5165\u529B\u3067\u304D\u307E\u3059\u3002\u2705 \u3092\u30C1\u30A7\u30C3\u30AF\u3057\u305F\u9805\u76EE\u3060\u3051\u7570\u5E38\u5024\u5224\u5B9A\uFF08\u8D64\u8272\u8868\u793A\uFF09\u306B\u4F7F\u308F\u308C\u307E\u3059\u3002\u6700\u5C0F\uFF0F\u6700\u5927\u306E\u6B04\u3092\u30BF\u30C3\u30D7\u3059\u308B\u3068\u5DE6\u306E\u30C6\u30F3\u30AD\u30FC\u3067\u5165\u529B\u3067\u304D\u307E\u3059\u3002"), [{
     fields: INDOOR_FIELDS,
     label: "室内機（インドア）",
     color: C.blue
@@ -6813,139 +7752,111 @@ function ACInspectionApp() {
       color,
       borderBottom: "2px solid " + color,
       paddingBottom: 5,
-      marginBottom: 10
+      marginBottom: 6
     }
   }, label), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
-      gap: 4
+      gap: 3
     }
-  }, fields.map(f => /*#__PURE__*/React.createElement("div", {
-    key: f.code,
-    style: {
-      borderRadius: 10,
-      overflow: "hidden",
-      border: "1.5px solid " + (tmpLim[f.code]?.enabled ? C.purple : C.g200)
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 14,
-      padding: "10px 14px",
-      background: tmpLim[f.code]?.enabled ? C.purple + "0A" : C.g50,
-      cursor: "pointer"
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: !!tmpLim[f.code]?.enabled,
-    onChange: e => setTmpLim(p => ({
-      ...p,
-      [f.code]: {
-        ...p[f.code],
-        enabled: e.target.checked
+  }, fields.map(f => {
+    const isMinActive = limActive?.code === f.code && limActive?.part === "min";
+    const isMaxActive = limActive?.code === f.code && limActive?.part === "max";
+    const en = !!tmpLim[f.code]?.enabled;
+    return /*#__PURE__*/React.createElement("div", {
+      key: f.code,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "7px 10px",
+        borderRadius: 8,
+        border: "1.5px solid " + (en ? C.purple : C.g200),
+        background: en ? C.purple + "08" : C.g50
       }
-    })),
-    style: {
-      width: 18,
-      height: 18,
-      accentColor: C.purple,
-      cursor: "pointer"
-    }
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontFamily: "monospace",
-      fontWeight: 700,
-      color,
-      fontSize: 14,
-      minWidth: 34
-    }
-  }, f.code), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 15,
-      color: C.g600,
-      flex: 1
-    }
-  }, f.label), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 11,
-      color: C.g400,
-      background: C.g100,
-      padding: "2px 8px",
-      borderRadius: 5
-    }
-  }, f.unit)), tmpLim[f.code]?.enabled && /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "12px 14px 14px 46px",
-      background: C.white,
-      display: "flex",
-      gap: 12,
-      alignItems: "center",
-      borderTop: "1px solid " + C.g200
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 13,
-      color: C.g500,
-      minWidth: 36
-    }
-  }, "\u6700\u5C0F"), /*#__PURE__*/React.createElement("input", {
-    type: "number",
-    step: f.step,
-    placeholder: "\u2014",
-    value: tmpLim[f.code]?.min || "",
-    onChange: e => setTmpLim(p => ({
-      ...p,
-      [f.code]: {
-        ...p[f.code],
-        min: e.target.value
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: en,
+      onChange: e => setTmpLim(p => ({
+        ...p,
+        [f.code]: {
+          ...p[f.code],
+          enabled: e.target.checked
+        }
+      })),
+      style: {
+        width: 16,
+        height: 16,
+        accentColor: C.purple,
+        cursor: "pointer",
+        flexShrink: 0
       }
-    })),
-    style: {
-      width: 90,
-      padding: "8px 10px",
-      borderRadius: 7,
-      border: "1.5px solid " + C.g200,
-      fontSize: 15,
-      fontFamily: "monospace",
-      textAlign: "right",
-      outline: "none"
-    }
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 13,
-      color: C.g300
-    }
-  }, "\u301C"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 13,
-      color: C.g500,
-      minWidth: 36
-    }
-  }, "\u6700\u5927"), /*#__PURE__*/React.createElement("input", {
-    type: "number",
-    step: f.step,
-    placeholder: "\u2014",
-    value: tmpLim[f.code]?.max || "",
-    onChange: e => setTmpLim(p => ({
-      ...p,
-      [f.code]: {
-        ...p[f.code],
-        max: e.target.value
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: "monospace",
+        fontWeight: 700,
+        color,
+        fontSize: 12,
+        width: 28,
+        flexShrink: 0
       }
-    })),
-    style: {
-      width: 90,
-      padding: "8px 10px",
-      borderRadius: 7,
-      border: "1.5px solid " + C.g200,
-      fontSize: 15,
-      fontFamily: "monospace",
-      textAlign: "right",
-      outline: "none"
-    }
-  }))))))), /*#__PURE__*/React.createElement("div", {
+    }, f.code), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        color: C.g600,
+        flex: 1,
+        minWidth: 0,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, f.label), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 10,
+        color: C.g400,
+        width: 38,
+        flexShrink: 0,
+        textAlign: "center"
+      }
+    }, f.unit), /*#__PURE__*/React.createElement("button", {
+      onClick: () => limFocus(f.code, "min"),
+      style: {
+        width: 64,
+        padding: "5px 6px",
+        borderRadius: 6,
+        border: "2px solid " + (isMinActive ? C.blue : C.g200),
+        background: isMinActive ? "#EFF6FF" : C.white,
+        color: (isMinActive ? limNumDisp : tmpLim[f.code]?.min) ? C.g800 : C.g300,
+        fontSize: 13,
+        fontFamily: "monospace",
+        textAlign: "right",
+        cursor: "pointer",
+        flexShrink: 0
+      }
+    }, isMinActive ? limNumDisp || "—" : tmpLim[f.code]?.min || "—"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: C.g300,
+        flexShrink: 0
+      }
+    }, "\u301C"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => limFocus(f.code, "max"),
+      style: {
+        width: 64,
+        padding: "5px 6px",
+        borderRadius: 6,
+        border: "2px solid " + (isMaxActive ? C.blue : C.g200),
+        background: isMaxActive ? "#EFF6FF" : C.white,
+        color: (isMaxActive ? limNumDisp : tmpLim[f.code]?.max) ? C.g800 : C.g300,
+        fontSize: 13,
+        fontFamily: "monospace",
+        textAlign: "right",
+        cursor: "pointer",
+        flexShrink: 0
+      }
+    }, isMaxActive ? limNumDisp || "—" : tmpLim[f.code]?.max || "—"));
+  })))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -6967,7 +7878,11 @@ function ACInspectionApp() {
       fontSize: 14
     }
   }, "\u4FDD\u5B58\u3059\u308B"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setTmpLim(defLim()),
+    onClick: () => {
+      setTmpLim(defLim());
+      setLimActive(null);
+      setLimNumDisp("");
+    },
     style: {
       padding: "11px 16px",
       borderRadius: 9,
@@ -6977,7 +7892,7 @@ function ACInspectionApp() {
       color: C.g500,
       fontSize: 13
     }
-  }, "\u30EA\u30BB\u30C3\u30C8")))))))))), /*#__PURE__*/React.createElement("div", {
+  }, "\u30EA\u30BB\u30C3\u30C8"))))))))))), /*#__PURE__*/React.createElement("div", {
     id: "print-area",
     style: {
       display: "none"
@@ -7405,6 +8320,7 @@ function ACInspectionApp() {
     }, "\uD83C\uDFED \u5BA4\u5916\u6A5F"))), /*#__PURE__*/React.createElement("tbody", null, groupStats.map((g, i) => /*#__PURE__*/React.createElement("tr", {
       key: i,
       onClick: () => {
+        setBuildingFilter(g.building === "—" ? null : g.building);
         setFloorFilter(g.floor === "—" ? null : g.floor);
         setListFilter("all");
         setView("list");
@@ -7585,7 +8501,7 @@ function ACInspectionApp() {
       marginBottom: 10,
       lineHeight: 1.6
     }
-  }, "\u30C7\u30FC\u30BF\u4E00\u89A7\u3067\u4EE5\u4E0B\u306E\u7D5E\u308A\u8FBC\u307F\u30FB\u4E26\u3073\u66FF\u3048\u304C\u9078\u629E\u3055\u308C\u305F\u72B6\u614B\u3067\u3059\u3002", /*#__PURE__*/React.createElement("br", null), "\u3053\u306E\u5185\u5BB9\u306E\u307E\u307ECSV\u51FA\u529B\u3057\u3066\u3088\u308D\u3057\u3044\u3067\u3059\u304B\uFF1F"), /*#__PURE__*/React.createElement("div", {
+  }, "\u30C7\u30FC\u30BF\u4E00\u89A7\u3067\u4EE5\u4E0B\u306E\u7D5E\u308A\u8FBC\u307F\u30FB\u4E26\u3073\u66FF\u3048\u304C\u9078\u629E\u3055\u308C\u305F\u72B6\u614B\u3067\u3059\u3002", /*#__PURE__*/React.createElement("br", null), "\u3053\u306E\u5185\u5BB9\u306E\u307E\u307E", showExportConfirm.label, "\u51FA\u529B\u3057\u3066\u3088\u308D\u3057\u3044\u3067\u3059\u304B\uFF1F"), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.g50,
       borderRadius: 10,
@@ -7595,7 +8511,7 @@ function ACInspectionApp() {
       flexDirection: "column",
       gap: 5
     }
-  }, showExportConfirm.map((desc, i) => /*#__PURE__*/React.createElement("div", {
+  }, showExportConfirm.list.map((desc, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
     style: {
       fontSize: 12,
@@ -7622,7 +8538,7 @@ function ACInspectionApp() {
     }
   }, "\u3044\u3044\u3048"), /*#__PURE__*/React.createElement("button", {
     onClick: () => {
-      exportListAsCSV();
+      showExportConfirm.run();
       setShowExportConfirm(null);
     },
     style: {
@@ -7940,10 +8856,28 @@ function ACInspectionApp() {
       color: "#78350F",
       fontFamily: p.label === "設定温度" ? "monospace" : "inherit"
     }
-  }, p.val)))), /*#__PURE__*/React.createElement("button", {
+  }, p.val)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: closeSaveToList,
+    style: {
+      padding: "16px 14px",
+      borderRadius: 10,
+      border: "1.5px solid " + C.g300,
+      cursor: "pointer",
+      background: C.white,
+      color: C.g600,
+      fontWeight: 700,
+      fontSize: 14,
+      whiteSpace: "nowrap"
+    }
+  }, "\uD83D\uDCCB \u30C7\u30FC\u30BF\u4E00\u89A7"), /*#__PURE__*/React.createElement("button", {
     onClick: closeNext,
     style: {
-      width: "100%",
+      flex: 1,
       padding: "16px",
       borderRadius: 10,
       border: "none",
@@ -7954,10 +8888,28 @@ function ACInspectionApp() {
       fontSize: 16,
       boxShadow: "0 3px 10px rgba(5,150,105,0.3)"
     }
-  }, "\u2705 \u623B\u3057\u307E\u3057\u305F\u3000\u2192\u3000", nextLabel)) : /*#__PURE__*/React.createElement("button", {
+  }, "\u2705 \u623B\u3057\u307E\u3057\u305F\u3000\u2192\u3000", nextLabel))) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: closeSaveToList,
+    style: {
+      padding: "16px 14px",
+      borderRadius: 10,
+      border: "1.5px solid " + C.g300,
+      cursor: "pointer",
+      background: C.white,
+      color: C.g600,
+      fontWeight: 700,
+      fontSize: 14,
+      whiteSpace: "nowrap"
+    }
+  }, "\uD83D\uDCCB \u30C7\u30FC\u30BF\u4E00\u89A7"), /*#__PURE__*/React.createElement("button", {
     onClick: closeNext,
     style: {
-      width: "100%",
+      flex: 1,
       padding: "16px",
       borderRadius: 10,
       border: "none",
@@ -7968,7 +8920,7 @@ function ACInspectionApp() {
       fontSize: 16,
       boxShadow: "0 3px 10px rgba(37,99,176,0.3)"
     }
-  }, "\u2705 ", nextLabel)))), measZoom && saveModal && /*#__PURE__*/React.createElement("div", {
+  }, "\u2705 ", nextLabel))))), measZoom && saveModal && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
